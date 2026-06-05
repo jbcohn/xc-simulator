@@ -1,0 +1,7 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.tmp

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XContest Paragliding XC Simulator & Optimizer</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- App Layout Container -->
+    <div class="app-container">
+        <!-- Floating Glassmorphic Sidebar -->
+        <aside class="sidebar glass">
+            <!-- App Header -->
+            <header class="app-header">
+                <div class="logo-area">
+                    <img src="logo.png" class="logo-icon-img" alt="Hawk Triangle Logo">
+                    <div>
+                        <h1>XC-Contest Sim</h1>
+                        <span class="status-badge pulse">SIMULATOR READY</span>
+                    </div>
+                </div>
+                <p class="subtitle">Train & optimize paragliding points in real-time</p>
+            </header>
+
+            <!-- Mode Selector Toggle -->
+            <section class="control-group">
+                <h3 class="group-title">DRAWING MODE</h3>
+                <div class="toggle-switch">
+                    <button id="btn-mode-waypoint" class="toggle-btn active" title="Click points on the map to define waypoints">
+                        <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+                        Waypoint
+                    </button>
+                    <button id="btn-mode-freehand" class="toggle-btn" title="Drag mouse to draw freehand flight track. Hold Shift to draw when a track is loaded, or click Clear.">
+                        <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z" fill="currentColor"/></svg>
+                        Freehand Draw
+                    </button>
+                </div>
+            </section>
+
+            <!-- Map Controls -->
+            <section class="control-group">
+                <h3 class="group-title">MAP & LAYERS</h3>
+                <div class="map-actions">
+                    <div class="map-layer-selector">
+                        <button id="btn-layer-satellite" class="layer-btn active" data-layer="satellite">Satellite</button>
+                        <button id="btn-layer-topo" class="layer-btn" data-layer="topo">Topo / Out</button>
+                        <button id="btn-layer-street" class="layer-btn" data-layer="street">Streets</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Main Scoring Dashboard -->
+            <section class="dashboard-panel">
+                <h2 class="panel-title">SCORING STATS</h2>
+                
+                <!-- Active Track Filename Banner -->
+                <div id="active-track-banner" class="active-track-banner" style="display: none;">
+                    <svg viewBox="0 0 24 24" width="12" height="12" class="banner-icon"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" fill="currentColor"/></svg>
+                    <span id="active-track-name">No track loaded</span>
+                </div>
+                
+                <div class="points-display">
+                    <span id="score-value">0.00</span>
+                    <span class="points-label">POINTS</span>
+                </div>
+
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Scored Distance</span>
+                        <span id="stat-distance" class="stat-value">0.00 km</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Flight Category</span>
+                        <span id="stat-category" class="stat-value category-free">Free Flight</span>
+                    </div>
+                </div>
+
+                <div class="details-list">
+                    <!-- Gap Closure details -->
+                    <div class="detail-row">
+                        <div class="detail-label-group">
+                            <span>Closing Gap</span>
+                            <span id="gap-warning" class="badge badge-ok">0.00%</span>
+                        </div>
+                        <span id="stat-gap" class="detail-value">0.00 km</span>
+                    </div>
+                    
+                    <!-- Progress bar for gap -->
+                    <div class="progress-bar-container">
+                        <div id="gap-progress-bar" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+
+                    <!-- FAI Leg percentages -->
+                    <div class="legs-section">
+                        <div class="legs-header">
+                            <span>Leg Lengths</span>
+                            <span id="shortest-leg-badge" class="badge">No legs</span>
+                        </div>
+                        <div class="leg-item">
+                            <span class="leg-name">Leg 1 (AB)</span>
+                            <div class="leg-details">
+                                <span id="leg1-val" class="leg-val">0.00 km</span>
+                                <span id="leg1-pct" class="leg-pct">0.0%</span>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <span class="leg-name">Leg 2 (BC)</span>
+                            <div class="leg-details">
+                                <span id="leg2-val" class="leg-val">0.00 km</span>
+                                <span id="leg2-pct" class="leg-pct">0.0%</span>
+                            </div>
+                        </div>
+                        <div class="leg-item">
+                            <span class="leg-name">Leg 3 (CA)</span>
+                            <div class="leg-details">
+                                <span id="leg3-val" class="leg-val">0.00 km</span>
+                                <span id="leg3-pct" class="leg-pct">0.0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="coeff-legend">
+                    <div class="legend-item"><span class="color-dot free"></span>Free Flight: <strong>1.00 pt/km</strong></div>
+                    <div class="legend-item"><span class="color-dot free-tri"></span>Free Triangle: <strong>1.20 pts/km</strong></div>
+                    <div class="legend-item"><span class="color-dot closed-free"></span>Closed Free / FAI: <strong>1.40 pts/km</strong></div>
+                    <div class="legend-item"><span class="color-dot closed-fai"></span>Closed FAI Triangle: <strong>1.60 pts/km</strong></div>
+                </div>
+            </section>
+
+            <!-- Undo / Redo Actions -->
+            <section class="action-buttons">
+                <button id="btn-undo" class="action-btn" title="Undo last draw action" disabled>
+                    <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
+                    Undo
+                </button>
+                <button id="btn-redo" class="action-btn" title="Redo last undone action" disabled>
+                    <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" fill="currentColor"/></svg>
+                    Redo
+                </button>
+                <button id="btn-clear" class="action-btn danger-btn" title="Clear entire track">
+                    <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                    Clear
+                </button>
+            </section>
+
+            <!-- Import Tracklog Section -->
+            <section class="control-group">
+                <h3 class="group-title">IMPORT TRACKLOG</h3>
+                <div class="import-controls">
+                    <!-- File Upload Input -->
+                    <div class="file-upload-wrapper">
+                        <label for="input-file-upload" class="upload-label">
+                            <svg viewBox="0 0 24 24" width="14" height="14" class="btn-icon"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" fill="currentColor"/></svg>
+                            Upload Track (.igc, .gpx, .kml)
+                        </label>
+                        <input id="input-file-upload" type="file" accept=".igc,.gpx,.kml" style="display: none;" />
+                    </div>
+                    
+                </div>
+            </section>
+
+            <!-- Saved Routes & Tracks Section -->
+            <section class="control-group">
+                <div class="saved-header">
+                    <h3 class="group-title" style="margin-bottom: 0;">SAVED ROUTES & TRACKS</h3>
+                    <button id="btn-save-current" class="save-btn" title="Save current route or track">
+                        <svg viewBox="0 0 24 24" width="14" height="14" class="btn-icon"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
+                        Save Current
+                    </button>
+                </div>
+                <div id="saved-list" class="saved-list" style="margin-top: 10px;">
+                    <!-- Dynamic saved list items will be injected here -->
+                </div>
+            </section>
+
+            <!-- Quick Rules Help -->
+            <section class="rules-help">
+                <h4>Official XContest Rules</h4>
+                <p><strong>Free Flight:</strong> Non-triangle path. <strong>1.00 pt/km</strong>.</p>
+                <p><strong>Free Triangle:</strong> Gap &lt; 20% of perimeter. <strong>1.20 pts/km</strong>.</p>
+                <p><strong>FAI Triangle:</strong> Free triangle, shortest leg &ge; 28% of perimeter. <strong>1.40 pts/km</strong>.</p>
+                <p><strong>Closed Free Tri:</strong> Free triangle, gap &lt; 5% of perimeter. <strong>1.40 pts/km</strong>.</p>
+                <p><strong>Closed FAI Tri:</strong> FAI triangle, gap &lt; 5% of perimeter. <strong>1.60 pts/km</strong>.</p>
+                <p><strong>Wedges:</strong> Green zones where your 3rd turnpoint makes the triangle FAI-compliant.</p>
+            </section>
+        </aside>
+
+        <!-- Full-screen Map Container -->
+        <main id="map" class="map-view"></main>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
