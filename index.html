@@ -44,7 +44,11 @@
                     </button>
                     <button id="btn-mode-freehand" class="toggle-btn" title="Drag mouse to draw freehand flight track. Hold Shift to draw when a track is loaded, or click Clear.">
                         <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z" fill="currentColor"/></svg>
-                        Freehand Draw
+                        Freehand
+                    </button>
+                    <button id="btn-mode-compare" class="toggle-btn" title="Compare pacing of multiple flight tracks in the area">
+                        <svg viewBox="0 0 24 24" width="16" height="16" class="btn-icon"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6h-6z" fill="currentColor"/></svg>
+                        Pace Compare
                     </button>
                 </div>
             </section>
@@ -62,7 +66,7 @@
             </section>
 
             <!-- Main Scoring Dashboard -->
-            <section class="dashboard-panel">
+            <section id="scoring-panel" class="dashboard-panel">
                 <h2 class="panel-title">SCORING STATS</h2>
                 
                 <!-- Active Track Filename Banner -->
@@ -137,6 +141,34 @@
                     <div class="legend-item"><span class="color-dot free-tri"></span>Free Triangle: <strong>1.20 pts/km</strong></div>
                     <div class="legend-item"><span class="color-dot closed-free"></span>Closed Free / FAI: <strong>1.40 pts/km</strong></div>
                     <div class="legend-item"><span class="color-dot closed-fai"></span>Closed FAI Triangle: <strong>1.60 pts/km</strong></div>
+                </div>
+            </section>
+
+            <!-- Pace Compare Dashboard Panel -->
+            <section id="compare-panel" class="dashboard-panel" style="display: none;">
+                <h2 class="panel-title">PACE COMPARISON</h2>
+                
+                <div id="compare-stats-banner" class="active-track-banner" style="margin-bottom: 10px;">
+                    <svg viewBox="0 0 24 24" width="12" height="12" class="banner-icon"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6h-6z" fill="currentColor"/></svg>
+                    <span id="compare-tracks-count">0 tracks loaded</span>
+                </div>
+
+                <div class="compare-section-title" style="font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 6px;">COMPARED FLIGHTS</div>
+                <div id="compare-track-list" class="compare-track-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 140px; overflow-y: auto; margin-bottom: 12px; padding-right: 2px;">
+                    <!-- Dynamic comparison track cards injected here -->
+                </div>
+
+                <div class="compare-section-title" style="font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 6px;">TIME OF DAY FILTER</div>
+                <div class="slider-wrapper" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; margin-bottom: 12px;">
+                    <div class="slider-label-group" style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                        <span id="lbl-slider-time" style="color: var(--color-cyan); font-weight: 600; font-family: var(--font-mono);">Show All Times</span>
+                    </div>
+                    <input id="compare-time-slider" type="range" min="0" max="1" value="0" step="1" class="time-slider" style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; cursor: pointer; accent-color: var(--color-cyan);">
+                </div>
+
+                <div class="compare-section-title" style="font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 6px;">PACE TIMELINE LEGEND</div>
+                <div id="compare-legend" class="compare-legend" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 6px; border-radius: 6px;">
+                    <!-- Dynamic legend items will go here -->
                 </div>
             </section>
 

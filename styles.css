@@ -1039,5 +1039,140 @@ body, html {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.9);
 }
 
+/* Pace Compare Styles */
+.compare-track-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.compare-track-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.compare-track-color-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.compare-track-checkbox {
+    cursor: pointer;
+    accent-color: var(--color-cyan);
+}
+
+.compare-track-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.compare-track-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.compare-track-meta {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.compare-track-delete-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.compare-track-delete-btn:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Custom Scrollbars for Compare panel lists */
+.compare-track-list::-webkit-scrollbar,
+.compare-legend::-webkit-scrollbar {
+    width: 4px;
+}
+.compare-track-list::-webkit-scrollbar-track,
+.compare-legend::-webkit-scrollbar-track {
+    background: transparent;
+}
+.compare-track-list::-webkit-scrollbar-thumb,
+.compare-legend::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+}
+.compare-track-list::-webkit-scrollbar-thumb:hover,
+.compare-legend::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Legend items */
+.legend-time-swatch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.legend-time-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* Map Pace Sync Lines */
+.pace-sync-line {
+    transition: stroke-width 0.2s ease;
+}
+.pace-sync-line:hover {
+    stroke-width: 3px !important;
+}
+
+/* Map Pace Node markers */
+.pace-node-marker {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pace-node-dot {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #0b0f19;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    transition: all 0.2s ease;
+}
+
+.pace-node-marker.highlighted .pace-node-dot {
+    transform: scale(1.4);
+    border-color: #fff;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.8), 0 0 4px currentColor;
+}
+
 
 

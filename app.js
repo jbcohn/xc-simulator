@@ -5,13 +5,14 @@
 
 // Global state
 const state = {
-    mode: 'waypoint', // 'waypoint' or 'freehand'
+    mode: 'waypoint', // 'waypoint', 'freehand', or 'compare'
     waypoints: [],    // User clicked waypoints: [{lat, lng}, ...]
     freehandTrack: [], // Raw mouse track points: [{lat, lng}, ...]
     history: [],      // History stack for undo: [{waypoints, freehandTrack}]
     historyIndex: -1, // Current index in history stack
     activeSavedId: null, // ID of currently loaded saved route/track
     currentStats: null,  // Cached calculation stats for saving
+    compareTracks: [],   // Array of tracks in pace comparison: [{ id, name, points, color, visible }]
     activeLayers: {
         satellite: null,
         topo: null,
@@ -24,7 +25,10 @@ const state = {
         optLine: null,        // Optimized line overlay
         markers: [],          // Markers for waypoints/Tps
         wedges: null,         // FAI wedges polygon
-        closingCircle: null   // Closing circle overlay
+        closingCircle: null,  // Closing circle overlay
+        compareTracksGroup: null, // Leaflet layer group for comparison tracks
+        compareNodesGroup: null,  // Leaflet layer group for pace nodes
+        compareLinesGroup: null   // Leaflet layer group for pacing sync-lines
     }
 };
 
@@ -87,6 +91,9 @@ function initMap() {
     state.drawings.optLine = L.polyline([], { color: '#10b981', weight: 5, opacity: 0.9, dashArray: '1' }).addTo(state.map);
     state.drawings.wedges = L.featureGroup().addTo(state.map);
     state.drawings.closingCircle = L.featureGroup().addTo(state.map);
+    state.drawings.compareTracksGroup = L.featureGroup().addTo(state.map);
+    state.drawings.compareNodesGroup = L.featureGroup().addTo(state.map);
+    state.drawings.compareLinesGroup = L.featureGroup().addTo(state.map);
     
     // Wire drawing interactions
     setupDrawingInteractions();
@@ -1008,7 +1015,16 @@ function initUI() {
     // Mode toggles
     document.getElementById('btn-mode-waypoint').addEventListener('click', () => setMode('waypoint'));
     document.getElementById('btn-mode-freehand').addEventListener('click', () => setMode('freehand'));
+    document.getElementById('btn-mode-compare').addEventListener('click', () => setMode('compare'));
     
+    // Time slider listener
+    const timeSlider = document.getElementById('compare-time-slider');
+    if (timeSlider) {
+        timeSlider.addEventListener('input', (e) => {
+            updateCompareTimeFilter(parseInt(e.target.value));
+        });
+    }
+
     // Map layer buttons
     document.getElementById('btn-layer-satellite').addEventListener('click', (e) => setActiveLayer(e.target, 'satellite'));
     document.getElementById('btn-layer-topo').addEventListener('click', (e) => setActiveLayer(e.target, 'topo'));
@@ -1051,9 +1067,17 @@ function initUI() {
                 } else {
                     showToast('Failed to parse track points. Check file format!', 'danger');
                 }
+                fileInput.value = ''; // Reset input after operation finishes
             };
+            
+            reader.onerror = (err) => {
+                const errName = reader.error ? reader.error.name : "UnknownError";
+                const errMsg = reader.error ? reader.error.message : "No error message";
+                console.error("FileReader error:", errName, "-", errMsg, err);
+                fileInput.value = '';
+            };
+            
             reader.readAsText(file);
-            fileInput.value = ''; // Reset input
         });
     }
 
@@ -1067,11 +1091,21 @@ function setMode(newMode) {
     state.mode = newMode;
     document.getElementById('btn-mode-waypoint').classList.toggle('active', newMode === 'waypoint');
     document.getElementById('btn-mode-freehand').classList.toggle('active', newMode === 'freehand');
+    document.getElementById('btn-mode-compare').classList.toggle('active', newMode === 'compare');
+    
+    // Toggle dashboard views
+    const scoringPanel = document.getElementById('scoring-panel');
+    const comparePanel = document.getElementById('compare-panel');
+    if (scoringPanel) scoringPanel.style.display = newMode === 'compare' ? 'none' : 'block';
+    if (comparePanel) comparePanel.style.display = newMode === 'compare' ? 'block' : 'none';
     
     // Reset drawings
     clearAll();
     
-    showToast(`Switched to ${newMode === 'waypoint' ? 'Waypoint Mode' : 'Freehand Draw Mode'}.`, 'info');
+    let modeName = 'Waypoint Mode';
+    if (newMode === 'freehand') modeName = 'Freehand Draw Mode';
+    if (newMode === 'compare') modeName = 'Pace Compare Mode';
+    showToast(`Switched to ${modeName}.`, 'info');
 }
 
 function setActiveLayer(btnEl, layerKey) {
@@ -1147,6 +1181,7 @@ function updateHistoryButtons() {
 function clearAll() {
     state.waypoints = [];
     state.freehandTrack = [];
+    state.compareTracks = [];
     state.activeSavedId = null;
     saveState();
     
@@ -1155,6 +1190,10 @@ function clearAll() {
     updateActiveTrackDisplay(null);
     
     highlightActiveSavedItem();
+    
+    if (state.mode === 'compare') {
+        renderCompareMode();
+    }
 }
 
 function clearDrawings() {
@@ -1172,11 +1211,21 @@ function clearMapLayers() {
     if (state.drawings.wedges) {
         state.drawings.wedges.clearLayers();
     }
-    
 
     // Remove closing circles
     if (state.drawings.closingCircle) {
         state.drawings.closingCircle.clearLayers();
+    }
+
+    // Clear Pace Compare drawings
+    if (state.drawings.compareTracksGroup) {
+        state.drawings.compareTracksGroup.clearLayers();
+    }
+    if (state.drawings.compareNodesGroup) {
+        state.drawings.compareNodesGroup.clearLayers();
+    }
+    if (state.drawings.compareLinesGroup) {
+        state.drawings.compareLinesGroup.clearLayers();
     }
 
     // Remove simplified line trace
@@ -1658,20 +1707,27 @@ function parseIGC(text) {
             try {
                 // Lat: DDMMmmmN/S (8 chars)
                 const latStr = line.substring(7, 15);
-                const latDeg = parseInt(latStr.substring(0, 2));
-                const latMin = parseInt(latStr.substring(2, 7)) / 1000;
+                const latDeg = parseInt(latStr.substring(0, 2), 10);
+                const latMin = parseInt(latStr.substring(2, 7), 10) / 1000;
                 let lat = latDeg + latMin / 60;
                 if (latStr.charAt(7) === 'S') lat = -lat;
 
                 // Lng: DDDMMmmmE/W (9 chars)
                 const lngStr = line.substring(15, 24);
-                const lngDeg = parseInt(lngStr.substring(0, 3));
-                const lngMin = parseInt(lngStr.substring(3, 8)) / 1000;
+                const lngDeg = parseInt(lngStr.substring(0, 3), 10);
+                const lngMin = parseInt(lngStr.substring(3, 8), 10) / 1000;
                 let lng = lngDeg + lngMin / 60;
                 if (lngStr.charAt(8) === 'W') lng = -lng;
 
+                // Time: HHMMSS (6 chars) starting at index 1
+                const timeStr = line.substring(1, 7);
+                const hrs = parseInt(timeStr.substring(0, 2), 10);
+                const mins = parseInt(timeStr.substring(2, 4), 10);
+                const secs = parseInt(timeStr.substring(4, 6), 10);
+                const time = hrs * 3600 + mins * 60 + secs;
+
                 if (!isNaN(lat) && !isNaN(lng)) {
-                    points.push({ lat, lng });
+                    points.push({ lat, lng, time });
                 }
             } catch (e) {
                 // Ignore malformed lines
@@ -1690,8 +1746,27 @@ function parseGPX(text) {
     for (let i = 0; i < trkpts.length; i++) {
         const lat = parseFloat(trkpts[i].getAttribute('lat'));
         const lng = parseFloat(trkpts[i].getAttribute('lon'));
+        
+        // Parse time tag if exists
+        const timeEl = trkpts[i].getElementsByTagName('time')[0];
+        let time = undefined;
+        if (timeEl && timeEl.textContent) {
+            try {
+                const d = new Date(timeEl.textContent);
+                if (!isNaN(d.getTime())) {
+                    time = d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds();
+                }
+            } catch (e) {
+                // Ignore timestamp error
+            }
+        }
+        
         if (!isNaN(lat) && !isNaN(lng)) {
-            points.push({ lat, lng });
+            if (time !== undefined) {
+                points.push({ lat, lng, time });
+            } else {
+                points.push({ lat, lng });
+            }
         }
     }
     return points;
@@ -1720,14 +1795,109 @@ function parseKML(text) {
     return points;
 }
 
+// Ensure timestamps exist for Pace Comparison
+function ensureTimestamps(points) {
+    if (!points || points.length === 0) return [];
+    
+    // Check if points already have valid timestamps
+    const hasTime = points.some(p => p.time !== undefined && !isNaN(p.time) && p.time > 0);
+    if (hasTime) {
+        // First, handle any midnight wrap-around to make timestamps strictly increasing
+        let dayOffset = 0;
+        let prevRawTime = -1;
+        for (let i = 0; i < points.length; i++) {
+            if (points[i].time !== undefined && !isNaN(points[i].time)) {
+                const rawTime = points[i].time;
+                if (prevRawTime !== -1 && rawTime < prevRawTime - 43200) {
+                    dayOffset += 86400;
+                }
+                points[i].time = rawTime + dayOffset;
+                prevRawTime = rawTime;
+            }
+        }
+
+        // Linearly interpolate any missing intermediate timestamps
+        let lastTime = (points[0].time !== undefined && !isNaN(points[0].time)) ? points[0].time : 43200;
+        for (let i = 0; i < points.length; i++) {
+            if (points[i].time === undefined || isNaN(points[i].time)) {
+                // Find next point with valid timestamp to interpolate
+                let nextIdx = -1;
+                for (let j = i + 1; j < points.length; j++) {
+                    if (points[j].time !== undefined && !isNaN(points[j].time)) {
+                        nextIdx = j;
+                        break;
+                    }
+                }
+                if (nextIdx !== -1) {
+                    const step = (points[nextIdx].time - lastTime) / (nextIdx - i + 1);
+                    for (let k = i; k < nextIdx; k++) {
+                        points[k].time = Math.round(lastTime + step * (k - i + 1));
+                    }
+                    i = nextIdx - 1;
+                } else {
+                    // No future timestamp, just increment by 1 sec
+                    points[i].time = lastTime + 1;
+                }
+            }
+            lastTime = points[i].time;
+        }
+        return points;
+    }
+    
+    // Interpolate timestamps based on cumulative Vincenty distance
+    // Assumes standard paraglider speed: 30 km/h = 0.00833 km/s
+    // Starts at 12:00:00 UTC (43200 seconds)
+    let cumulativeDist = 0;
+    points[0].time = 43200;
+    for (let i = 1; i < points.length; i++) {
+        const d = vincentyDistance(points[i - 1], points[i]);
+        cumulativeDist += d;
+        points[i].time = 43200 + Math.round(cumulativeDist / 0.00833);
+    }
+    return points;
+}
+
 // Setup a clean callback for loaded tracks
 function loadImportedTrack(points, label) {
+    // Ensure timestamps exist for the track points
+    points = ensureTimestamps(points);
+
+    if (state.mode === 'compare') {
+        const colors = ['#00f2fe', '#a855f7', '#f59e0b', '#10b981', '#ec4899', '#3b82f6'];
+        const trackColor = colors[state.compareTracks.length % colors.length];
+        
+        const newTrack = {
+            id: Date.now() + Math.random(),
+            name: label.replace('Uploaded File: ', ''),
+            points: points,
+            color: trackColor,
+            visible: true
+        };
+        
+        state.compareTracks.push(newTrack);
+        renderCompareMode();
+        
+        // Zoom map to fit all compared tracks combined
+        const allPoints = [];
+        state.compareTracks.forEach(t => {
+            if (t.visible) allPoints.push(...t.points);
+        });
+        if (allPoints.length > 0) {
+            const polyline = L.polyline(allPoints);
+            state.map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
+        }
+        
+        showToast(`Added track: ${newTrack.name} to comparison.`, 'success');
+        return;
+    }
+
     clearAll();
     
     // Switch to freehand mode since imported tracks are continuous logs
     state.mode = 'freehand';
     document.getElementById('btn-mode-waypoint').classList.remove('active');
     document.getElementById('btn-mode-freehand').classList.add('active');
+    document.getElementById('btn-mode-compare').classList.remove('active');
     
     state.freehandTrack = points;
     saveState();
@@ -2052,4 +2222,371 @@ function refineOptimizedFlight(rawPoints, optResult, mappingToRaw) {
             refinedPoints: [curr_s, curr_1, curr_2, curr_3, curr_f].map(idx => rawPoints[idx])
         };
     }
+}
+
+// ==========================================
+// 10. PACE COMPARISON MODE CONTROLS
+// ==========================================
+
+function getColorForTimeStr(timeStr) {
+    const timeColors = {
+        "08:00": "#fef08a", "08:30": "#fef08a",
+        "09:00": "#fde047", "09:30": "#facc15", // Yellow
+        "10:00": "#f97316", "10:30": "#ea580c", // Orange
+        "11:00": "#ef4444", "11:30": "#dc2626", // Red
+        "12:00": "#ec4899", "12:30": "#db2777", // Pink
+        "13:00": "#d946ef", "13:30": "#c084fc", // Fuchsia
+        "14:00": "#a855f7", "14:30": "#8b5cf6", // Purple/Violet
+        "15:00": "#6366f1", "15:30": "#4f46e5", // Indigo
+        "16:00": "#3b82f6", "16:30": "#2563eb", // Blue
+        "17:00": "#0ea5e9", "17:30": "#06b6d4", // Sky Blue
+        "18:00": "#14b8a6", "18:30": "#10b981", // Teal/Emerald
+        "19:00": "#22c55e", "19:30": "#15803d", // Green/Dark Green
+        "20:00": "#166534"
+    };
+    return timeColors[timeStr] || "#a1a1aa"; // default grey
+}
+
+function formatTimeStr(seconds) {
+    const hrs = Math.floor(seconds / 3600) % 24;
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
+function getLocalOffsetHours() {
+    if (state.compareTracks && state.compareTracks.length > 0) {
+        const visible = state.compareTracks.filter(t => t.visible);
+        const refTrack = visible.length > 0 ? visible[0] : state.compareTracks[0];
+        if (refTrack && refTrack.points && refTrack.points.length > 0) {
+            return Math.round(refTrack.points[0].lng / 15);
+        }
+    }
+    return 0;
+}
+
+function getLocalSeconds(utcSeconds) {
+    const offset = getLocalOffsetHours();
+    return (utcSeconds + offset * 3600 + 86400 * 2) % 86400;
+}
+
+function getInterpolatedPos(trackPoints, targetTime) {
+    if (trackPoints.length < 2) return null;
+    if (targetTime < trackPoints[0].time || targetTime > trackPoints[trackPoints.length - 1].time) {
+        return null; // outside flight window
+    }
+    
+    // Binary search for segment
+    let low = 0;
+    let high = trackPoints.length - 2;
+    let idx = -1;
+    
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (trackPoints[mid].time <= targetTime && trackPoints[mid + 1].time >= targetTime) {
+            idx = mid;
+            break;
+        } else if (trackPoints[mid].time > targetTime) {
+            high = mid - 1;
+        } else {
+            low = mid + 1;
+        }
+    }
+    
+    if (idx === -1) return null;
+    
+    const ptA = trackPoints[idx];
+    const ptB = trackPoints[idx + 1];
+    
+    const diff = ptB.time - ptA.time;
+    if (diff === 0) return { lat: ptA.lat, lng: ptA.lng };
+    
+    const f = (targetTime - ptA.time) / diff;
+    return {
+        lat: ptA.lat + f * (ptB.lat - ptA.lat),
+        lng: ptA.lng + f * (ptB.lng - ptA.lng)
+    };
+}
+
+function getNearestNeighborChain(nodes) {
+    if (nodes.length <= 1) return nodes;
+    
+    const chain = [nodes[0]];
+    const unvisited = nodes.slice(1);
+    let current = nodes[0];
+    
+    while (unvisited.length > 0) {
+        let nearestIdx = 0;
+        let minDist = Infinity;
+        
+        for (let i = 0; i < unvisited.length; i++) {
+            const node = unvisited[i];
+            const dist = Math.sqrt((node.lat - current.lat) ** 2 + (node.lng - current.lng) ** 2);
+            if (dist < minDist) {
+                minDist = dist;
+                nearestIdx = i;
+            }
+        }
+        
+        current = unvisited[nearestIdx];
+        chain.push(current);
+        unvisited.splice(nearestIdx, 1);
+    }
+    return chain;
+}
+
+function renderCompareMode() {
+    // 1. Clear existing overlays
+    clearMapLayers();
+    
+    const countEl = document.getElementById('compare-tracks-count');
+    const listContainer = document.getElementById('compare-track-list');
+    const legendContainer = document.getElementById('compare-legend');
+    const slider = document.getElementById('compare-time-slider');
+    
+    if (!countEl || !listContainer || !legendContainer || !slider) return;
+    
+    const count = state.compareTracks.length;
+    countEl.innerText = `${count} track${count === 1 ? '' : 's'} loaded`;
+    
+    if (count === 0) {
+        listContainer.innerHTML = `<div class="no-saved-routes" style="padding: 10px 4px; font-size: 10px;">No tracks loaded yet. Upload track files (.igc, .gpx, .kml) while in Pace Compare mode to overlay them!</div>`;
+        legendContainer.innerHTML = `<div style="grid-column: 1 / span 2; font-size: 9px; color: var(--text-muted); text-align: center; padding: 10px 0;">No legend timeline data</div>`;
+        slider.disabled = true;
+        slider.min = 0;
+        slider.max = 0;
+        slider.value = 0;
+        document.getElementById('lbl-slider-time').innerText = "Show All Times";
+        return;
+    }
+    
+    // Render track cards in sidebar
+    listContainer.innerHTML = '';
+    state.compareTracks.forEach(track => {
+        const startSec = track.points[0]?.time || 0;
+        const endSec = track.points[track.points.length - 1]?.time || 0;
+        
+        const card = document.createElement('div');
+        card.className = 'compare-track-card';
+        card.innerHTML = `
+            <input type="checkbox" class="compare-track-checkbox" ${track.visible ? 'checked' : ''} title="Toggle visibility">
+            <span class="compare-track-color-indicator" style="background-color: ${track.color};"></span>
+            <div class="compare-track-info">
+                <span class="compare-track-title" title="${track.name}">${escapeHTML(track.name)}</span>
+                <span class="compare-track-meta">${formatTimeStr(startSec)} - ${formatTimeStr(endSec)} UTC</span>
+            </div>
+            <button class="compare-track-delete-btn" title="Delete track">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+        `;
+        
+        // Wire toggles
+        card.querySelector('.compare-track-checkbox').addEventListener('change', () => {
+            toggleCompareTrackVisibility(track.id);
+        });
+        
+        // Wire deletes
+        card.querySelector('.compare-track-delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteCompareTrack(track.id);
+        });
+        
+        listContainer.appendChild(card);
+    });
+    
+    // Draw each visible track line
+    const visibleTracks = state.compareTracks.filter(t => t.visible);
+    visibleTracks.forEach(track => {
+        const polyline = L.polyline(track.points, {
+            color: track.color,
+            weight: 2,
+            opacity: 0.45,
+            interactive: false
+        });
+        polyline.addTo(state.drawings.compareTracksGroup);
+    });
+    
+    if (visibleTracks.length === 0) {
+        legendContainer.innerHTML = `<div style="grid-column: 1 / span 2; font-size: 9px; color: var(--text-muted); text-align: center; padding: 10px 0;">No visible tracks</div>`;
+        slider.disabled = true;
+        slider.min = 0;
+        slider.max = 0;
+        slider.value = 0;
+        document.getElementById('lbl-slider-time').innerText = "Show All Times";
+        return;
+    }
+    
+    // Find absolute timebounds of visible tracks
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    
+    visibleTracks.forEach(t => {
+        if (t.points[0]?.time < minTime) minTime = t.points[0].time;
+        if (t.points[t.points.length - 1]?.time > maxTime) maxTime = t.points[t.points.length - 1].time;
+    });
+    
+    if (minTime === Infinity || maxTime === -Infinity || minTime >= maxTime) {
+        return; // invalid time bounds
+    }
+    
+    // Round bounds to nearest half-hour marks
+    const startHalfHour = Math.ceil(minTime / 1800) * 1800;
+    const endHalfHour = Math.floor(maxTime / 1800) * 1800;
+    
+    const halfHours = [];
+    for (let t = startHalfHour; t <= endHalfHour; t += 1800) {
+        halfHours.push(t);
+    }
+    
+    state.compareHalfHours = halfHours;
+    
+    // Render Nodes & Connecting Lines
+    halfHours.forEach(T => {
+        const localSec = getLocalSeconds(T);
+        const timeStr = formatTimeStr(localSec);
+        const color = getColorForTimeStr(timeStr);
+        
+        const activeNodes = [];
+        visibleTracks.forEach(track => {
+            const pos = getInterpolatedPos(track.points, T);
+            if (pos) {
+                activeNodes.push({
+                    trackId: track.id,
+                    lat: pos.lat,
+                    lng: pos.lng
+                });
+            }
+        });
+        
+        if (activeNodes.length >= 1) {
+            // Draw nodes
+            activeNodes.forEach(node => {
+                const marker = L.marker([node.lat, node.lng], {
+                    interactive: true,
+                    icon: L.divIcon({
+                        className: 'pace-node-marker',
+                        html: `<div class="pace-node-dot" style="background-color: ${color}; color: ${color};"></div>`,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    })
+                }).addTo(state.drawings.compareNodesGroup);
+                
+                marker.compareTime = T;
+                
+                // Add popup showing flight details
+                const track = state.compareTracks.find(t => t.id === node.trackId);
+                const localTimeStr = formatTimeStr(localSec);
+                marker.bindPopup(`
+                    <div style="font-size: 11px; font-family: var(--font-sans);">
+                        <strong style="color: ${track.color};">${escapeHTML(track.name)}</strong><br/>
+                        Time: <strong>${formatTimeStr(T)} UTC (${localTimeStr} Local)</strong><br/>
+                        Pos: ${node.lat.toFixed(5)}, ${node.lng.toFixed(5)}
+                    </div>
+                `, { closeButton: false });
+            });
+        }
+        
+        if (activeNodes.length >= 2) {
+            // Connect nodes using spatial nearest neighbor path
+            const chain = getNearestNeighborChain(activeNodes);
+            const pathCoords = chain.map(n => [n.lat, n.lng]);
+            
+            const polyline = L.polyline(pathCoords, {
+                color: color,
+                weight: 1.5,
+                opacity: 0.75,
+                dashArray: '2, 3',
+                className: 'pace-sync-line',
+                interactive: false
+            }).addTo(state.drawings.compareLinesGroup);
+            
+            polyline.compareTime = T;
+        }
+    });
+    
+    // Build Timeline Legend
+    legendContainer.innerHTML = '';
+    if (halfHours.length === 0) {
+        legendContainer.innerHTML = `<div style="grid-column: 1 / span 2; font-size: 9px; color: var(--text-muted); text-align: center; padding: 10px 0;">No overlapping half-hour steps</div>`;
+    } else {
+        halfHours.forEach(T => {
+            const localSec = getLocalSeconds(T);
+            const timeStr = formatTimeStr(localSec);
+            const color = getColorForTimeStr(timeStr);
+            const item = document.createElement('div');
+            item.className = 'legend-time-swatch';
+            item.innerHTML = `<span class="legend-time-color" style="background-color: ${color};"></span>${timeStr} Local`;
+            legendContainer.appendChild(item);
+        });
+    }
+    
+    // Update Slider limits
+    if (halfHours.length > 0) {
+        slider.disabled = false;
+        slider.min = 0;
+        slider.max = halfHours.length;
+        slider.value = 0;
+        document.getElementById('lbl-slider-time').innerText = "Show All Times";
+    } else {
+        slider.disabled = true;
+        slider.min = 0;
+        slider.max = 0;
+        slider.value = 0;
+        document.getElementById('lbl-slider-time').innerText = "Show All Times";
+    }
+}
+
+function deleteCompareTrack(id) {
+    state.compareTracks = state.compareTracks.filter(t => t.id !== id);
+    renderCompareMode();
+    showToast('Deleted track from comparison.', 'info');
+}
+
+function toggleCompareTrackVisibility(id) {
+    const track = state.compareTracks.find(t => t.id === id);
+    if (track) {
+        track.visible = !track.visible;
+        renderCompareMode();
+    }
+}
+
+function updateCompareTimeFilter(val) {
+    const label = document.getElementById('lbl-slider-time');
+    if (!label) return;
+    
+    if (val === 0 || !state.compareHalfHours || state.compareHalfHours.length === 0) {
+        // Show All Times
+        label.innerText = "Show All Times";
+        
+        state.drawings.compareNodesGroup.eachLayer(layer => {
+            layer.setOpacity(1.0);
+            layer.getElement()?.classList.remove('highlighted');
+        });
+        
+        state.drawings.compareLinesGroup.eachLayer(layer => {
+            layer.setStyle({ opacity: 0.75, weight: 1.5 });
+        });
+        return;
+    }
+    
+    const targetTime = state.compareHalfHours[val - 1];
+    const localSec = getLocalSeconds(targetTime);
+    label.innerText = `Time: ${formatTimeStr(targetTime)} UTC (${formatTimeStr(localSec)} Local)`;
+    
+    state.drawings.compareNodesGroup.eachLayer(layer => {
+        if (layer.compareTime === targetTime) {
+            layer.setOpacity(1.0);
+            layer.getElement()?.classList.add('highlighted');
+        } else {
+            layer.setOpacity(0.12);
+            layer.getElement()?.classList.remove('highlighted');
+        }
+    });
+    
+    state.drawings.compareLinesGroup.eachLayer(layer => {
+        if (layer.compareTime === targetTime) {
+            layer.setStyle({ opacity: 0.95, weight: 3 });
+        } else {
+            layer.setStyle({ opacity: 0.05, weight: 1.0 });
+        }
+    });
 }
