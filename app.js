@@ -267,7 +267,7 @@ function renderOptimizedOverlays(result, rawPoints) {
         if (i === 0) pinColor = 'marker-start';
         if (i === optPoints.length - 1) pinColor = 'marker-finish';
         
-        const labelText = optPoints.length === 2 && i === 1 ? 'FINISH' : (labels[i] || `TP ${i}`);
+        const labelText = (i === optPoints.length - 1 && optPoints.length > 1) ? 'FINISH' : (labels[i] || `TP ${i}`);
         const customIcon = L.divIcon({
             className: 'custom-wp-marker',
             html: `<div class="marker-pin ${pinColor}"><span>${i + 1}</span></div><div class="marker-label">${labelText}</div>`,
@@ -295,7 +295,7 @@ function renderOptimizedOverlays(result, rawPoints) {
     }
 
     // Update stats dashboard
-    updateScoreDashboard(result.score, result.distance, result.type, result.legLengths, result.gap, result.gapPercent);
+    updateScoreDashboard(result.score, result.distance, result.type, result.legLengths, result.gap, result.gapPercent, optPoints.length);
 }
 
 // Calculate and render stats dynamically in Waypoint Mode
@@ -523,9 +523,10 @@ function renderOptimizationResult(result, rawPoints, simplified) {
         if (i === 0) pinColor = 'marker-start';
         if (i === optPoints.length - 1) pinColor = 'marker-finish';
         
+        const labelText = (i === optPoints.length - 1 && optPoints.length > 1) ? 'FINISH' : (labels[i] || `TP ${i}`);
         const customIcon = L.divIcon({
             className: 'custom-wp-marker',
-            html: `<div class="marker-pin ${pinColor}"><span>${i + 1}</span></div><div class="marker-label">${labels[i]}</div>`,
+            html: `<div class="marker-pin ${pinColor}"><span>${i + 1}</span></div><div class="marker-label">${labelText}</div>`,
             iconSize: [30, 42],
             iconAnchor: [15, 42]
         });
@@ -548,7 +549,7 @@ function renderOptimizationResult(result, rawPoints, simplified) {
     }
 
     // Display optimized scores in sidebar
-    updateScoreDashboard(result.score, result.distance, result.type, result.legLengths, result.gap, result.gapPercent);
+    updateScoreDashboard(result.score, result.distance, result.type, result.legLengths, result.gap, result.gapPercent, optPoints.length);
     
     let toastType = (result.type === 'fai' || result.type === 'closed_fai') ? 'success' : 'info';
     showToast(`Optimized: ${result.type.replace('_', ' ').toUpperCase()} flight! Score: ${result.score.toFixed(2)} pts`, toastType);
@@ -759,6 +760,108 @@ function drawClosingCircles(startPt, perimeter) {
         interactive: false
     });
     circle5.addTo(state.drawings.closingCircle);
+}
+
+// Explicit route scoring for Waypoint Mode (3, 4, 5 points)
+function scoreRouteExplicit(wps) {
+    const len = wps.length;
+    if (len === 3) {
+        const d01 = vincentyDistance(wps[0], wps[1]);
+        const d12 = vincentyDistance(wps[1], wps[2]);
+        const d20 = vincentyDistance(wps[2], wps[0]);
+        const perimeter = d01 + d12 + d20;
+        const shortestLeg = Math.min(d01, d12, d20);
+        const isFai = shortestLeg >= 0.28 * perimeter;
+        const type = isFai ? 'closed_fai' : 'closed_free';
+        const coeff = isFai ? 1.60 : 1.40;
+        return {
+            score: perimeter * coeff,
+            distance: perimeter,
+            type: type,
+            legLengths: [d01, d12, d20],
+            gap: 0,
+            gapPercent: 0,
+            refinedPoints: [wps[0], wps[1], wps[2], wps[0]],
+            indices: [0, 1, 2, 0]
+        };
+    }
+    else if (len === 4) {
+        const d12 = vincentyDistance(wps[1], wps[2]);
+        const d23 = vincentyDistance(wps[2], wps[3]);
+        const d31 = vincentyDistance(wps[3], wps[1]);
+        const perimeter = d12 + d23 + d31;
+        const shortestLeg = Math.min(d12, d23, d31);
+        const isFai = shortestLeg >= 0.28 * perimeter;
+        const type = isFai ? 'closed_fai' : 'closed_free';
+        const coeff = isFai ? 1.60 : 1.40;
+        return {
+            score: perimeter * coeff,
+            distance: perimeter,
+            type: type,
+            legLengths: [d12, d23, d31],
+            gap: 0,
+            gapPercent: 0,
+            refinedPoints: [wps[0], wps[1], wps[2], wps[3], wps[0]],
+            indices: [0, 1, 2, 3, 0]
+        };
+    }
+    else if (len === 5) {
+        const d12 = vincentyDistance(wps[1], wps[2]);
+        const d23 = vincentyDistance(wps[2], wps[3]);
+        const d31 = vincentyDistance(wps[3], wps[1]);
+        const perimeter = d12 + d23 + d31;
+        const shortestLeg = Math.min(d12, d23, d31);
+        const gap = vincentyDistance(wps[0], wps[4]);
+        const gapPercent = (gap / perimeter) * 100;
+        
+        if (gapPercent <= 20.0) {
+            const isFai = shortestLeg >= 0.28 * perimeter;
+            const isClosed = gapPercent < 5.0;
+            let coeff = 1.20;
+            let type = 'free_tri';
+            
+            if (isFai && isClosed) {
+                coeff = 1.60;
+                type = 'closed_fai';
+            } else if (isFai && !isClosed) {
+                coeff = 1.40;
+                type = 'fai';
+            } else if (!isFai && isClosed) {
+                coeff = 1.40;
+                type = 'closed_free';
+            }
+            
+            const scoredDist = perimeter - gap;
+            return {
+                score: scoredDist * coeff,
+                distance: scoredDist,
+                type: type,
+                legLengths: [d12, d23, d31],
+                gap: gap,
+                gapPercent: gapPercent,
+                refinedPoints: [wps[0], wps[1], wps[2], wps[3], wps[4]],
+                indices: [0, 1, 2, 3, 4]
+            };
+        } else {
+            // Fallback to sequential Free Flight using all 5 waypoints
+            const d01 = vincentyDistance(wps[0], wps[1]);
+            const d12_val = vincentyDistance(wps[1], wps[2]);
+            const d23_val = vincentyDistance(wps[2], wps[3]);
+            const d34 = vincentyDistance(wps[3], wps[4]);
+            const totalDist = d01 + d12_val + d23_val + d34;
+            return {
+                score: totalDist * 1.0,
+                distance: totalDist,
+                type: 'free',
+                legLengths: [d01, d12_val, d23_val, d34],
+                gap: 0,
+                gapPercent: 0,
+                refinedPoints: wps,
+                indices: [0, 1, 2, 3, 4]
+            };
+        }
+    }
+    return null;
 }
 
 // ==========================================
@@ -1334,38 +1437,51 @@ function updateWaypointOverlaysOnly() {
     }
     else if (len === 2) {
         const dist = vincentyDistance(wps[0], wps[1]);
-        updateScoreDashboard(dist * 1.0, dist, 'free', [dist], 0, 0);
+        updateScoreDashboard(dist * 1.0, dist, 'free', [dist], 0, 0, 2);
         drawFAIWedges(wps[0], wps[1]);
     }
-    else if (len === 3) {
-        const result = optimizeTrack(wps);
+    else if (len >= 3 && len <= 5) {
+        const result = scoreRouteExplicit(wps);
         if (result) {
             renderOptimizedOverlays(result, wps);
+            
+            // Draw FAI wedges and closing circles unconditionally to help with planning
+            if (len === 3) {
+                drawFAIWedges(wps[0], wps[1], wps[2]);
+                drawFAIWedges(wps[1], wps[2], wps[0]);
+                drawFAIWedges(wps[2], wps[0], wps[1]);
+                
+                const perimeter = vincentyDistance(wps[0], wps[1]) + vincentyDistance(wps[1], wps[2]) + vincentyDistance(wps[2], wps[0]);
+                drawClosingCircles(wps[0], perimeter);
+            } else { // len === 4 or len === 5
+                drawFAIWedges(wps[1], wps[2], wps[3]);
+                drawFAIWedges(wps[2], wps[3], wps[1]);
+                drawFAIWedges(wps[3], wps[1], wps[2]);
+                
+                const perimeter = vincentyDistance(wps[1], wps[2]) + vincentyDistance(wps[2], wps[3]) + vincentyDistance(wps[3], wps[1]);
+                drawClosingCircles(wps[0], perimeter);
+            }
         }
-        
-        // Draw FAI wedges for all 3 legs of the triangle directly from waypoints
-        drawFAIWedges(wps[0], wps[1], wps[2]);
-        drawFAIWedges(wps[1], wps[2], wps[0]);
-        drawFAIWedges(wps[2], wps[0], wps[1]);
-        
-        // Draw closing circles around start point directly from waypoints
-        const perimeter = vincentyDistance(wps[0], wps[1]) + vincentyDistance(wps[1], wps[2]) + vincentyDistance(wps[2], wps[0]);
-        drawClosingCircles(wps[0], perimeter);
     }
-    else {
+    else { // len > 5
         const result = optimizeTrack(wps);
         if (result) {
             renderOptimizedOverlays(result, wps);
+            
+            const optIndices = result.indices;
+            const optPoints = result.refinedPoints || optIndices.map(idx => wps[idx]);
+            
+            if (result.type !== 'free' && optPoints.length >= 5) {
+                drawFAIWedges(optPoints[1], optPoints[2], optPoints[3]);
+                drawFAIWedges(optPoints[2], optPoints[3], optPoints[1]);
+                drawFAIWedges(optPoints[3], optPoints[1], optPoints[2]);
+                
+                const perimeter = result.legLengths[0] + result.legLengths[1] + result.legLengths[2];
+                drawClosingCircles(optPoints[0], perimeter);
+            } else if (result.type !== 'free' && optPoints.length >= 4) {
+                drawFAIWedges(optPoints[1], optPoints[2]);
+            }
         }
-        
-        // Draw FAI wedges for the 3 legs of the turnpoints triangle directly from waypoints
-        drawFAIWedges(wps[1], wps[2], wps[3]);
-        drawFAIWedges(wps[2], wps[3], wps[1]);
-        drawFAIWedges(wps[3], wps[1], wps[2]);
-        
-        // Draw closing circles around start point directly from waypoints
-        const perimeter = vincentyDistance(wps[1], wps[2]) + vincentyDistance(wps[2], wps[3]) + vincentyDistance(wps[3], wps[1]);
-        drawClosingCircles(wps[0], perimeter);
     }
 }
 
@@ -1384,9 +1500,13 @@ function updateActiveTrackDisplay(name) {
 }
 
 // Update the floating dashboard panel with new stats
-function updateScoreDashboard(points, dist, type, legs, gap, gapPercent) {
+function updateScoreDashboard(points, dist, type, legs, gap, gapPercent, numPoints) {
     // Cache stats in state
-    state.currentStats = { points, dist, type, legs, gap, gapPercent };
+    state.currentStats = { points, dist, type, legs, gap, gapPercent, numPoints };
+
+    if (numPoints === undefined) {
+        numPoints = ['free_tri', 'fai', 'closed_free', 'closed_fai'].includes(type) ? 5 : legs.length + 1;
+    }
 
     // 1. Points value
     const pointsValEl = document.getElementById('score-value');
@@ -1442,43 +1562,71 @@ function updateScoreDashboard(points, dist, type, legs, gap, gapPercent) {
     // 5. Leg lengths details
     const totalLegs = legs.reduce((a, b) => a + b, 0);
     
-    const updateLegUI = (index, value) => {
-        const valEl = document.getElementById(`leg${index}-val`);
-        const pctEl = document.getElementById(`leg${index}-pct`);
-        const itemEl = valEl.closest('.leg-item');
-        
-        itemEl.className = 'leg-item'; // Reset classes
-        
-        if (value > 0) {
-            const pct = (value / totalLegs) * 100;
+    const legItems = document.querySelectorAll('.leg-item');
+    legItems.forEach((itemEl, idx) => {
+        if (idx < legs.length) {
+            itemEl.style.display = 'flex';
+            
+            const valEl = itemEl.querySelector('.leg-val') || document.getElementById(`leg${idx + 1}-val`);
+            const pctEl = itemEl.querySelector('.leg-pct') || document.getElementById(`leg${idx + 1}-pct`);
+            const nameEl = itemEl.querySelector('.leg-name');
+            
+            const value = legs[idx];
+            const pct = totalLegs > 0 ? (value / totalLegs) * 100 : 0;
+            
             valEl.innerText = `${value.toFixed(1)} km`;
             pctEl.innerText = `${pct.toFixed(1)}%`;
             
-            if (pct >= 28.0) {
-                itemEl.classList.add('valid-fai');
-            } else {
-                itemEl.classList.add('invalid');
+            // Set dynamic label to match map markers
+            let labelText = `Leg ${idx + 1}`;
+            const isTri = ['free_tri', 'fai', 'closed_free', 'closed_fai'].includes(type);
+            if (isTri) {
+                if (numPoints === 4) {
+                    if (idx === 0) labelText = 'Leg 1 (1 → 2)';
+                    if (idx === 1) labelText = 'Leg 2 (2 → 3)';
+                    if (idx === 2) labelText = 'Leg 3 (3 → 4)';
+                } else { // numPoints === 5 or default
+                    if (idx === 0) labelText = 'Leg 1 (2 → 3)';
+                    if (idx === 1) labelText = 'Leg 2 (3 → 4)';
+                    if (idx === 2) labelText = 'Leg 3 (4 → 2)';
+                }
+            } else { // free flight
+                labelText = `Leg ${idx + 1} (${idx + 1} → ${idx + 2})`;
+            }
+            if (nameEl) {
+                nameEl.innerText = labelText;
+            }
+            
+            itemEl.className = 'leg-item'; // Reset classes
+            if (isTri) {
+                if (pct >= 28.0) {
+                    itemEl.classList.add('valid-fai');
+                } else {
+                    itemEl.classList.add('invalid');
+                }
             }
         } else {
-            valEl.innerText = '0.0 km';
-            pctEl.innerText = '0.0%';
+            itemEl.style.display = 'none';
         }
-    };
-    
-    updateLegUI(1, legs[0] || 0);
-    updateLegUI(2, legs[1] || 0);
-    updateLegUI(3, legs[2] || 0);
+    });
 
     // 6. Shortest Leg Badge
     const shortestLegBadge = document.getElementById('shortest-leg-badge');
-    if (legs.length >= 3) {
+    const isTri = ['free_tri', 'fai', 'closed_free', 'closed_fai'].includes(type);
+    if (isTri && legs.length >= 3) {
         const minLeg = Math.min(...legs);
-        const minPct = (minLeg / totalLegs) * 100;
+        const minPct = totalLegs > 0 ? (minLeg / totalLegs) * 100 : 0;
         shortestLegBadge.innerText = `${minPct.toFixed(1)}% min`;
         shortestLegBadge.className = minPct >= 28.0 ? 'badge badge-ok' : 'badge badge-warn';
+        shortestLegBadge.style.display = 'inline-block';
+    } else if (legs.length > 0) {
+        shortestLegBadge.innerText = `${legs.length} legs`;
+        shortestLegBadge.className = 'badge';
+        shortestLegBadge.style.display = 'inline-block';
     } else {
         shortestLegBadge.innerText = 'No legs';
         shortestLegBadge.className = 'badge';
+        shortestLegBadge.style.display = 'inline-block';
     }
 }
 
