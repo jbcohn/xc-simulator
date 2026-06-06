@@ -13,6 +13,7 @@ const state = {
     activeSavedId: null, // ID of currently loaded saved route/track
     currentStats: null,  // Cached calculation stats for saving
     compareTracks: [],   // Array of tracks in pace comparison: [{ id, name, points, color, visible }]
+    compareUtcOffset: 'auto', // Timezone offset for comparison: 'auto' or integer hours
     activeLayers: {
         satellite: null,
         topo: null,
@@ -1025,6 +1026,17 @@ function initUI() {
         });
     }
 
+    // Timezone select listener
+    const tzSelect = document.getElementById('compare-timezone');
+    if (tzSelect) {
+        tzSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            state.compareUtcOffset = val === 'auto' ? 'auto' : parseInt(val, 10);
+            updateTrackLocalTimes();
+            renderCompareMode();
+        });
+    }
+
     // Map layer buttons
     document.getElementById('btn-layer-satellite').addEventListener('click', (e) => setActiveLayer(e.target, 'satellite'));
     document.getElementById('btn-layer-topo').addEventListener('click', (e) => setActiveLayer(e.target, 'topo'));
@@ -1083,9 +1095,36 @@ function initUI() {
 
     // Initialize Saved Routes & Tracks List
     renderSavedList();
+
+    // Mobile Sidebar Toggle and Backdrop listeners
+    const sidebarToggle = document.getElementById('btn-sidebar-toggle');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const sidebar = document.querySelector('.sidebar');
+    
+    if (sidebarToggle && backdrop && sidebar) {
+        const toggleSidebar = () => {
+            const isOpen = sidebar.classList.toggle('open');
+            sidebarToggle.classList.toggle('active', isOpen);
+            backdrop.classList.toggle('active', isOpen);
+        };
+        
+        sidebarToggle.addEventListener('click', toggleSidebar);
+        backdrop.addEventListener('click', toggleSidebar);
+    }
 }
 
-function setMode(newMode) {
+function closeSidebarOnMobile() {
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarToggle = document.getElementById('btn-sidebar-toggle');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar && sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        if (sidebarToggle) sidebarToggle.classList.remove('active');
+        if (backdrop) backdrop.classList.remove('active');
+    }
+}
+
+function setMode(newMode, silent = false) {
     if (state.mode === newMode) return;
     
     state.mode = newMode;
@@ -1102,16 +1141,21 @@ function setMode(newMode) {
     // Reset drawings
     clearAll();
     
-    let modeName = 'Waypoint Mode';
-    if (newMode === 'freehand') modeName = 'Freehand Draw Mode';
-    if (newMode === 'compare') modeName = 'Pace Compare Mode';
-    showToast(`Switched to ${modeName}.`, 'info');
+    if (!silent) {
+        let modeName = 'Waypoint Mode';
+        if (newMode === 'freehand') modeName = 'Freehand Draw Mode';
+        if (newMode === 'compare') modeName = 'Pace Compare Mode';
+        showToast(`Switched to ${modeName}.`, 'info');
+    }
+    
+    closeSidebarOnMobile();
 }
 
 function setActiveLayer(btnEl, layerKey) {
     document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.remove('active'));
     btnEl.classList.add('active');
     switchBaseLayer(layerKey);
+    closeSidebarOnMobile();
 }
 
 // State history for undo/redo
@@ -1183,6 +1227,11 @@ function clearAll() {
     state.freehandTrack = [];
     state.compareTracks = [];
     state.activeSavedId = null;
+    state.compareUtcOffset = 'auto';
+    
+    const tzSelect = document.getElementById('compare-timezone');
+    if (tzSelect) tzSelect.value = 'auto';
+    
     saveState();
     
     clearDrawings();
@@ -1607,16 +1656,52 @@ function loadSavedItem(id) {
     const item = savedItems.find(item => item.id === id);
     if (!item) return;
     
-    // Clear active layout first
-    clearAll();
+    if (state.mode === 'compare') {
+        if (item.type === 'route') {
+            showToast("Cannot load a waypoint route into Pace Comparison.", "warning");
+            return;
+        }
+        
+        // Load the saved track into pace comparison
+        const colors = ['#00f2fe', '#a855f7', '#f59e0b', '#10b981', '#ec4899', '#3b82f6'];
+        const trackColor = colors[state.compareTracks.length % colors.length];
+        
+        // Ensure timestamps exist
+        const points = ensureTimestamps(JSON.parse(JSON.stringify(item.points)));
+        
+        const newTrack = {
+            id: Date.now() + Math.random(),
+            name: item.name,
+            points: points,
+            color: trackColor,
+            visible: true
+        };
+        
+        state.compareTracks.push(newTrack);
+        updateTrackLocalTimes();
+        renderCompareMode();
+        
+        // Zoom map to fit all compared tracks combined
+        const allPoints = [];
+        state.compareTracks.forEach(t => {
+            if (t.visible) allPoints.push(...t.points);
+        });
+        if (allPoints.length > 0) {
+            const polyline = L.polyline(allPoints);
+            state.map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
+        }
+        
+        showToast(`Added track: ${newTrack.name} to comparison.`, 'success');
+        closeSidebarOnMobile();
+        return;
+    }
+    
+    // Switch mode first (toggles panels, buttons, and runs clearAll)
+    setMode(item.type === 'route' ? 'waypoint' : 'freehand', true);
     
     state.activeSavedId = item.id;
     
     if (item.type === 'route') {
-        state.mode = 'waypoint';
-        document.getElementById('btn-mode-waypoint').classList.add('active');
-        document.getElementById('btn-mode-freehand').classList.remove('active');
-        
         state.waypoints = JSON.parse(JSON.stringify(item.points));
         saveState();
         renderWaypointMode();
@@ -1627,10 +1712,6 @@ function loadSavedItem(id) {
         }
         updateActiveTrackDisplay(`Saved Route: ${item.name}`);
     } else {
-        state.mode = 'freehand';
-        document.getElementById('btn-mode-waypoint').classList.remove('active');
-        document.getElementById('btn-mode-freehand').classList.add('active');
-        
         state.freehandTrack = JSON.parse(JSON.stringify(item.points));
         saveState();
         
@@ -1648,6 +1729,7 @@ function loadSavedItem(id) {
     highlightActiveSavedItem();
     
     showToast(`Loaded: ${item.name}`, 'success');
+    closeSidebarOnMobile();
 }
 
 function deleteSavedItem(id) {
@@ -1799,6 +1881,12 @@ function parseKML(text) {
 function ensureTimestamps(points) {
     if (!points || points.length === 0) return [];
     
+    // Check if points already have valid processed timestamps (loaded from saved items)
+    const hasUtc = points.some(p => p.utcTime !== undefined && !isNaN(p.utcTime));
+    if (hasUtc) {
+        return points;
+    }
+    
     // Check if points already have valid timestamps
     const hasTime = points.some(p => p.time !== undefined && !isNaN(p.time) && p.time > 0);
     if (hasTime) {
@@ -1817,7 +1905,7 @@ function ensureTimestamps(points) {
         }
 
         // Linearly interpolate any missing intermediate timestamps
-        let lastTime = (points[0].time !== undefined && !isNaN(points[0].time)) ? points[0].time : 43200;
+        let lastTime = (points[0].time !== undefined && !isNaN(points[0].time)) ? points[0].time : (43200 - getLocalOffsetHours(points) * 3600);
         for (let i = 0; i < points.length; i++) {
             if (points[i].time === undefined || isNaN(points[i].time)) {
                 // Find next point with valid timestamp to interpolate
@@ -1841,19 +1929,28 @@ function ensureTimestamps(points) {
             }
             lastTime = points[i].time;
         }
-        return points;
+    } else {
+        // Interpolate timestamps based on cumulative Vincenty distance
+        // Assumes standard paraglider speed: 30 km/h = 0.00833 km/s
+        // Starts at 12:00:00 Local Time (43200 seconds local, offset-adjusted for UTC)
+        let cumulativeDist = 0;
+        const offsetHours = getLocalOffsetHours(points);
+        const startTime = 43200 - offsetHours * 3600;
+        points[0].time = startTime;
+        for (let i = 1; i < points.length; i++) {
+            const d = vincentyDistance(points[i - 1], points[i]);
+            cumulativeDist += d;
+            points[i].time = startTime + Math.round(cumulativeDist / 0.00833);
+        }
     }
-    
-    // Interpolate timestamps based on cumulative Vincenty distance
-    // Assumes standard paraglider speed: 30 km/h = 0.00833 km/s
-    // Starts at 12:00:00 UTC (43200 seconds)
-    let cumulativeDist = 0;
-    points[0].time = 43200;
-    for (let i = 1; i < points.length; i++) {
-        const d = vincentyDistance(points[i - 1], points[i]);
-        cumulativeDist += d;
-        points[i].time = 43200 + Math.round(cumulativeDist / 0.00833);
-    }
+
+    // Assign monotonic utcTime reference and project to local solar time
+    const offset = getLocalOffsetHours(points);
+    points.forEach(p => {
+        p.utcTime = p.time;
+        p.time = (p.utcTime + offset * 3600 + 86400 * 2) % 86400;
+    });
+
     return points;
 }
 
@@ -1875,6 +1972,7 @@ function loadImportedTrack(points, label) {
         };
         
         state.compareTracks.push(newTrack);
+        updateTrackLocalTimes();
         renderCompareMode();
         
         // Zoom map to fit all compared tracks combined
@@ -1888,16 +1986,12 @@ function loadImportedTrack(points, label) {
         }
         
         showToast(`Added track: ${newTrack.name} to comparison.`, 'success');
+        closeSidebarOnMobile();
         return;
     }
 
-    clearAll();
-    
-    // Switch to freehand mode since imported tracks are continuous logs
-    state.mode = 'freehand';
-    document.getElementById('btn-mode-waypoint').classList.remove('active');
-    document.getElementById('btn-mode-freehand').classList.add('active');
-    document.getElementById('btn-mode-compare').classList.remove('active');
+    // Switch to freehand mode silently (handles button styles, panels, and clearAll)
+    setMode('freehand', true);
     
     state.freehandTrack = points;
     saveState();
@@ -1912,6 +2006,7 @@ function loadImportedTrack(points, label) {
     state.map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
     
     showToast(`Loaded track: ${label}. Drag to pan. Hold Shift + Drag to redraw.`, 'success');
+    closeSidebarOnMobile();
 }
 
 /**
@@ -2228,32 +2323,72 @@ function refineOptimizedFlight(rawPoints, optResult, mappingToRaw) {
 // 10. PACE COMPARISON MODE CONTROLS
 // ==========================================
 
-function getColorForTimeStr(timeStr) {
-    const timeColors = {
-        "08:00": "#fef08a", "08:30": "#fef08a",
-        "09:00": "#fde047", "09:30": "#facc15", // Yellow
-        "10:00": "#f97316", "10:30": "#ea580c", // Orange
-        "11:00": "#ef4444", "11:30": "#dc2626", // Red
-        "12:00": "#ec4899", "12:30": "#db2777", // Pink
-        "13:00": "#d946ef", "13:30": "#c084fc", // Fuchsia
-        "14:00": "#a855f7", "14:30": "#8b5cf6", // Purple/Violet
-        "15:00": "#6366f1", "15:30": "#4f46e5", // Indigo
-        "16:00": "#3b82f6", "16:30": "#2563eb", // Blue
-        "17:00": "#0ea5e9", "17:30": "#06b6d4", // Sky Blue
-        "18:00": "#14b8a6", "18:30": "#10b981", // Teal/Emerald
-        "19:00": "#22c55e", "19:30": "#15803d", // Green/Dark Green
-        "20:00": "#166534"
-    };
-    return timeColors[timeStr] || "#a1a1aa"; // default grey
+function getColorForLocalSec(localSec) {
+    if (typeof localSec === 'string') {
+        // Fallback for safety in case of string input (e.g. older formats)
+        const parts = localSec.split(':');
+        const hrs = parseInt(parts[0], 10);
+        const mins = parseInt(parts[1], 10);
+        localSec = hrs * 3600 + mins * 60;
+    }
+    
+    // We want a beautiful spectrum for the daylight hours (6:00 AM to 9:30 PM local)
+    // 6 AM = 21600 seconds, 9:30 PM = 77400 seconds.
+    const startSec = 6 * 3600; // 06:00
+    const endSec = 21 * 3600 + 30 * 60; // 21:30
+    
+    if (localSec < startSec || localSec > endSec) {
+        return "#6b7280"; // night/out-of-bounds is cool grey
+    }
+    
+    const ratio = (localSec - startSec) / (endSec - startSec);
+    
+    // Map ratio to a continuous hue spectrum
+    let hue = 0;
+    if (ratio < 0.2) {
+        // 06:00 to 09:00: Hue 45 (Yellow-Orange) -> 25 (Orange-Red)
+        hue = 45 - (ratio / 0.2) * 20;
+    } else if (ratio < 0.4) {
+        // 09:00 to 12:00: Hue 25 -> 340 (Crimson/Pink-Red)
+        hue = 25 - ((ratio - 0.2) / 0.2) * 45;
+    } else if (ratio < 0.6) {
+        // 12:00 to 15:00: Hue 340 -> 280 (Purple)
+        hue = 340 - ((ratio - 0.4) / 0.2) * 60;
+    } else if (ratio < 0.75) {
+        // 15:00 to 17:30: Hue 280 -> 220 (Blue)
+        hue = 280 - ((ratio - 0.6) / 0.15) * 60;
+    } else if (ratio < 0.9) {
+        // 17:30 to 20:00: Hue 220 -> 170 (Teal)
+        hue = 220 - ((ratio - 0.75) / 0.15) * 50;
+    } else {
+        // 20:00 to 21:30: Hue 170 -> 120 (Green)
+        hue = 170 - ((ratio - 0.9) / 0.1) * 50;
+    }
+    
+    if (hue < 0) hue += 360;
+    
+    const saturation = 92; // 92% for high vibrance
+    const lightness = 54; // 54% lightness
+    
+    return `hsl(${Math.round(hue)}, ${saturation}%, ${lightness}%)`;
 }
 
 function formatTimeStr(seconds) {
-    const hrs = Math.floor(seconds / 3600) % 24;
+    const hrs24 = Math.floor(seconds / 3600) % 24;
     const mins = Math.floor((seconds % 3600) / 60);
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    const ampm = hrs24 >= 12 ? 'PM' : 'AM';
+    let hrs12 = hrs24 % 12;
+    if (hrs12 === 0) hrs12 = 12;
+    return `${hrs12.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')} ${ampm}`;
 }
 
-function getLocalOffsetHours() {
+function getLocalOffsetHours(points) {
+    if (state.compareUtcOffset !== 'auto') {
+        return state.compareUtcOffset;
+    }
+    if (points && points.length > 0) {
+        return Math.round(points[0].lng / 15);
+    }
     if (state.compareTracks && state.compareTracks.length > 0) {
         const visible = state.compareTracks.filter(t => t.visible);
         const refTrack = visible.length > 0 ? visible[0] : state.compareTracks[0];
@@ -2269,6 +2404,17 @@ function getLocalSeconds(utcSeconds) {
     return (utcSeconds + offset * 3600 + 86400 * 2) % 86400;
 }
 
+function updateTrackLocalTimes() {
+    const offset = getLocalOffsetHours();
+    state.compareTracks.forEach(track => {
+        track.points.forEach(p => {
+            if (p.utcTime !== undefined) {
+                p.time = (p.utcTime + offset * 3600 + 86400 * 2) % 86400;
+            }
+        });
+    });
+}
+ 
 function getInterpolatedPos(trackPoints, targetTime) {
     if (trackPoints.length < 2) return null;
     if (targetTime < trackPoints[0].time || targetTime > trackPoints[trackPoints.length - 1].time) {
@@ -2364,6 +2510,8 @@ function renderCompareMode() {
     state.compareTracks.forEach(track => {
         const startSec = track.points[0]?.time || 0;
         const endSec = track.points[track.points.length - 1]?.time || 0;
+        const localStart = startSec;
+        const localEnd = endSec;
         
         const card = document.createElement('div');
         card.className = 'compare-track-card';
@@ -2372,7 +2520,7 @@ function renderCompareMode() {
             <span class="compare-track-color-indicator" style="background-color: ${track.color};"></span>
             <div class="compare-track-info">
                 <span class="compare-track-title" title="${track.name}">${escapeHTML(track.name)}</span>
-                <span class="compare-track-meta">${formatTimeStr(startSec)} - ${formatTimeStr(endSec)} UTC</span>
+                <span class="compare-track-meta">${formatTimeStr(localStart)} - ${formatTimeStr(localEnd)} Local</span>
             </div>
             <button class="compare-track-delete-btn" title="Delete track">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -2441,9 +2589,11 @@ function renderCompareMode() {
     
     // Render Nodes & Connecting Lines
     halfHours.forEach(T => {
-        const localSec = getLocalSeconds(T);
-        const timeStr = formatTimeStr(localSec);
-        const color = getColorForTimeStr(timeStr);
+        const timeStr = formatTimeStr(T);
+        const color = getColorForLocalSec(T);
+        const offset = getLocalOffsetHours();
+        const utcSec = (T - offset * 3600 + 86400 * 2) % 86400;
+        const utcTimeStr = formatTimeStr(utcSec);
         
         const activeNodes = [];
         visibleTracks.forEach(track => {
@@ -2474,11 +2624,10 @@ function renderCompareMode() {
                 
                 // Add popup showing flight details
                 const track = state.compareTracks.find(t => t.id === node.trackId);
-                const localTimeStr = formatTimeStr(localSec);
                 marker.bindPopup(`
                     <div style="font-size: 11px; font-family: var(--font-sans);">
                         <strong style="color: ${track.color};">${escapeHTML(track.name)}</strong><br/>
-                        Time: <strong>${formatTimeStr(T)} UTC (${localTimeStr} Local)</strong><br/>
+                        Time: <strong>${timeStr} Local (${utcTimeStr} UTC)</strong><br/>
                         Pos: ${node.lat.toFixed(5)}, ${node.lng.toFixed(5)}
                     </div>
                 `, { closeButton: false });
@@ -2509,9 +2658,8 @@ function renderCompareMode() {
         legendContainer.innerHTML = `<div style="grid-column: 1 / span 2; font-size: 9px; color: var(--text-muted); text-align: center; padding: 10px 0;">No overlapping half-hour steps</div>`;
     } else {
         halfHours.forEach(T => {
-            const localSec = getLocalSeconds(T);
-            const timeStr = formatTimeStr(localSec);
-            const color = getColorForTimeStr(timeStr);
+            const timeStr = formatTimeStr(T);
+            const color = getColorForLocalSec(T);
             const item = document.createElement('div');
             item.className = 'legend-time-swatch';
             item.innerHTML = `<span class="legend-time-color" style="background-color: ${color};"></span>${timeStr} Local`;
@@ -2569,8 +2717,9 @@ function updateCompareTimeFilter(val) {
     }
     
     const targetTime = state.compareHalfHours[val - 1];
-    const localSec = getLocalSeconds(targetTime);
-    label.innerText = `Time: ${formatTimeStr(targetTime)} UTC (${formatTimeStr(localSec)} Local)`;
+    const offset = getLocalOffsetHours();
+    const utcSec = (targetTime - offset * 3600 + 86400 * 2) % 86400;
+    label.innerText = `Time: ${formatTimeStr(targetTime)} Local (${formatTimeStr(utcSec)} UTC)`;
     
     state.drawings.compareNodesGroup.eachLayer(layer => {
         if (layer.compareTime === targetTime) {

@@ -51,15 +51,90 @@ body, html {
     position: relative;
 }
 
+/* Mobile Toggle Button and Backdrop Defaults (Desktop Hidden) */
+.sidebar-toggle-btn {
+    display: none;
+}
+
+.sidebar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(11, 15, 25, 0.55);
+    z-index: 999;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-backdrop.active {
+    opacity: 1;
+    visibility: visible;
+}
+
 @media (max-width: 768px) {
     .app-container {
         grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
+        grid-template-rows: 1fr;
     }
+    
     .sidebar {
-        height: 400px;
+        position: fixed;
+        top: 0;
+        left: -320px;
+        width: 320px;
+        height: 100vh;
         z-index: 1000;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .sidebar.open {
+        left: 0;
+    }
+    
+    .sidebar-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(15, 22, 42, 0.85) 0%, rgba(11, 15, 25, 0.95) 100%);
+        border: 1px solid var(--border-color);
+        color: var(--color-cyan);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        cursor: pointer;
+        z-index: 1010;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .sidebar-toggle-btn:hover {
+        background: linear-gradient(135deg, rgba(15, 22, 42, 0.95) 0%, rgba(11, 15, 25, 1) 100%);
+        border-color: rgba(0, 242, 254, 0.4);
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+    }
+    
+    .sidebar-toggle-btn.active {
+        color: #fff;
+        border-color: var(--color-danger);
+    }
+    
+    .sidebar-toggle-btn.active .icon-menu {
+        display: none !important;
+    }
+    
+    .sidebar-toggle-btn.active .icon-close {
+        display: block !important;
     }
 }
 

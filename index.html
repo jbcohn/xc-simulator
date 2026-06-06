@@ -18,6 +18,19 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
+    <!-- Floating Mobile Sidebar Toggle Button -->
+    <button id="btn-sidebar-toggle" class="sidebar-toggle-btn" title="Toggle Sidebar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" class="icon-menu">
+            <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" class="icon-close" style="display: none;">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+    </button>
+
     <!-- App Layout Container -->
     <div class="app-container">
         <!-- Floating Glassmorphic Sidebar -->
@@ -160,8 +173,41 @@
 
                 <div class="compare-section-title" style="font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 6px;">TIME OF DAY FILTER</div>
                 <div class="slider-wrapper" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; margin-bottom: 12px;">
-                    <div class="slider-label-group" style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                        <span id="lbl-slider-time" style="color: var(--color-cyan); font-weight: 600; font-family: var(--font-mono);">Show All Times</span>
+                    <div class="slider-label-group" style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 6px; gap: 8px;">
+                        <span id="lbl-slider-time" style="color: var(--color-cyan); font-weight: 600; font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;">Show All Times</span>
+                        <div class="timezone-select-group" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                            <label for="compare-timezone" style="font-size: 9px; color: var(--text-muted);">Offset:</label>
+                            <select id="compare-timezone" style="background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 9px; padding: 2px 4px; border-radius: 4px; outline: none; cursor: pointer; font-family: var(--font-mono);">
+                                <option value="auto">Auto (GPS)</option>
+                                <option value="-12">UTC-12</option>
+                                <option value="-11">UTC-11</option>
+                                <option value="-10">UTC-10</option>
+                                <option value="-9">UTC-09</option>
+                                <option value="-8">UTC-08 (PST)</option>
+                                <option value="-7">UTC-07 (PDT)</option>
+                                <option value="-6">UTC-06 (CST)</option>
+                                <option value="-5">UTC-05 (EST)</option>
+                                <option value="-4">UTC-04</option>
+                                <option value="-3">UTC-03</option>
+                                <option value="-2">UTC-02</option>
+                                <option value="-1">UTC-01</option>
+                                <option value="0">UTC+00</option>
+                                <option value="1">UTC+01 (CET)</option>
+                                <option value="2">UTC+02 (CEST)</option>
+                                <option value="3">UTC+03</option>
+                                <option value="4">UTC+04</option>
+                                <option value="5">UTC+05</option>
+                                <option value="6">UTC+06</option>
+                                <option value="7">UTC+07</option>
+                                <option value="8">UTC+08</option>
+                                <option value="9">UTC+09</option>
+                                <option value="10">UTC+10</option>
+                                <option value="11">UTC+11</option>
+                                <option value="12">UTC+12</option>
+                                <option value="13">UTC+13</option>
+                                <option value="14">UTC+14</option>
+                            </select>
+                        </div>
                     </div>
                     <input id="compare-time-slider" type="range" min="0" max="1" value="0" step="1" class="time-slider" style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; cursor: pointer; accent-color: var(--color-cyan);">
                 </div>
