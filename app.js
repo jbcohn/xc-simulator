@@ -98,6 +98,20 @@ function initMap() {
     
     // Wire drawing interactions
     setupDrawingInteractions();
+
+    // Invalidate size on window resize to ensure correct rendering on responsive layout shifts
+    window.addEventListener('resize', () => {
+        if (state.map) {
+            state.map.invalidateSize();
+        }
+    });
+
+    // Run a deferred invalidation to resolve initial sizing glitches on layout load
+    setTimeout(() => {
+        if (state.map) {
+            state.map.invalidateSize();
+        }
+    }, 200);
 }
 
 function switchBaseLayer(layerKey) {

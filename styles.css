@@ -46,8 +46,8 @@ body, html {
 .app-container {
     display: grid;
     grid-template-columns: 360px 1fr;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     position: relative;
 }
 
@@ -76,67 +76,7 @@ body, html {
     visibility: visible;
 }
 
-@media (max-width: 768px) {
-    .app-container {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr;
-    }
-    
-    .sidebar {
-        position: fixed;
-        top: 0;
-        left: -320px;
-        width: 320px;
-        height: 100vh;
-        z-index: 1000;
-        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
-        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .sidebar.open {
-        left: 0;
-    }
-    
-    .sidebar-toggle-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: fixed;
-        top: 12px;
-        right: 12px;
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, rgba(15, 22, 42, 0.85) 0%, rgba(11, 15, 25, 0.95) 100%);
-        border: 1px solid var(--border-color);
-        color: var(--color-cyan);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-        cursor: pointer;
-        z-index: 1010;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .sidebar-toggle-btn:hover {
-        background: linear-gradient(135deg, rgba(15, 22, 42, 0.95) 0%, rgba(11, 15, 25, 1) 100%);
-        border-color: rgba(0, 242, 254, 0.4);
-        box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
-    }
-    
-    .sidebar-toggle-btn.active {
-        color: #fff;
-        border-color: var(--color-danger);
-    }
-    
-    .sidebar-toggle-btn.active .icon-menu {
-        display: none !important;
-    }
-    
-    .sidebar-toggle-btn.active .icon-close {
-        display: block !important;
-    }
-}
+
 
 /* Map View container */
 .map-view {
@@ -147,7 +87,7 @@ body, html {
 
 /* Glassmorphism sidebar styling */
 .sidebar {
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -1249,5 +1189,64 @@ body, html {
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.8), 0 0 4px currentColor;
 }
 
-
-
+@media (max-width: 768px) {
+    .app-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr;
+    }
+    
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -320px;
+        width: 320px;
+        height: 100%;
+        z-index: 1000;
+        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .sidebar.open {
+        left: 0;
+    }
+    
+    .sidebar-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(15, 22, 42, 0.85) 0%, rgba(11, 15, 25, 0.95) 100%);
+        border: 1px solid var(--border-color);
+        color: var(--color-cyan);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        cursor: pointer;
+        z-index: 1010;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .sidebar-toggle-btn:hover {
+        background: linear-gradient(135deg, rgba(15, 22, 42, 0.95) 0%, rgba(11, 15, 25, 1) 100%);
+        border-color: rgba(0, 242, 254, 0.4);
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+    }
+    
+    .sidebar-toggle-btn.active {
+        color: #fff;
+        border-color: var(--color-danger);
+    }
+    
+    .sidebar-toggle-btn.active .icon-menu {
+        display: none !important;
+    }
+    
+    .sidebar-toggle-btn.active .icon-close {
+        display: block !important;
+    }
+}
