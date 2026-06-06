@@ -22,7 +22,9 @@ const state = {
     map: null,
     // Layer groups for drawings
     drawings: {
+        trackLineBg: null,    // Black casing for track line
         trackLine: null,      // The active drawn track line
+        optLineBg: null,      // Black casing for optimized line
         optLine: null,        // Optimized line overlay
         markers: [],          // Markers for waypoints/Tps
         wedges: null,         // FAI wedges polygon
@@ -88,8 +90,10 @@ function initMap() {
     state.activeLayers.satellite.addTo(state.map);
 
     // Initialize drawings layer groups
-    state.drawings.trackLine = L.polyline([], { color: '#00f2fe', weight: 4, opacity: 0.95 }).addTo(state.map);
-    state.drawings.optLine = L.polyline([], { color: '#10b981', weight: 5, opacity: 0.9, dashArray: '1' }).addTo(state.map);
+    state.drawings.trackLineBg = L.polyline([], { color: '#000000', weight: 7, opacity: 0.85 }).addTo(state.map);
+    state.drawings.trackLine = L.polyline([], { color: '#dc2626', weight: 3.5, opacity: 0.95 }).addTo(state.map);
+    state.drawings.optLineBg = L.polyline([], { color: '#000000', weight: 8, opacity: 0.9 }).addTo(state.map);
+    state.drawings.optLine = L.polyline([], { color: '#10b981', weight: 4.5, opacity: 0.95, dashArray: '1' }).addTo(state.map);
     state.drawings.wedges = L.featureGroup().addTo(state.map);
     state.drawings.closingCircle = L.featureGroup().addTo(state.map);
     state.drawings.compareTracksGroup = L.featureGroup().addTo(state.map);
@@ -208,8 +212,10 @@ function renderWaypointMode() {
     }
  
     // 1. Draw raw clicked track as a line connecting user's clicks
+    state.drawings.trackLineBg.setLatLngs(wps);
+    state.drawings.trackLineBg.setStyle({ color: '#000000', weight: 7, opacity: 0.85 });
     state.drawings.trackLine.setLatLngs(wps);
-    state.drawings.trackLine.setStyle({ color: '#00f2fe', weight: 3, opacity: 0.7, dashArray: '' });
+    state.drawings.trackLine.setStyle({ color: '#dc2626', weight: 3.5, opacity: 0.95, dashArray: '' });
     
     // 2. Draw draggable div markers for every raw click point to show where they clicked
     wps.forEach((wp, idx) => {
@@ -252,16 +258,18 @@ function renderOptimizedOverlays(result, rawPoints) {
     if (optPoints.length < 2) return;
     
     // Draw optimized leg route
+    state.drawings.optLineBg.setLatLngs(optPoints);
+    state.drawings.optLineBg.setStyle({ color: '#000000', weight: 8, opacity: 0.9 });
     state.drawings.optLine.setLatLngs(optPoints);
     let color = '#3b82f6';
     if (result.type === 'free_tri') color = '#a855f7';
     if (result.type === 'fai') color = '#00f2fe';
     if (result.type === 'closed_free') color = '#f59e0b';
     if (result.type === 'closed_fai') color = '#10b981';
-    state.drawings.optLine.setStyle({ color: color, weight: 5, opacity: 0.95 });
+    state.drawings.optLine.setStyle({ color: color, weight: 4.5, opacity: 0.95 });
     
     // Draw optimized marker pins
-    const labels = ['START', 'TURNPOINT 1', 'TURNPOINT 2', 'TURNPOINT 3', 'FINISH'];
+    const labels = ['START', 'TP 1', 'TP 2', 'TP 3', 'FINISH'];
     optPoints.forEach((pt, i) => {
         let pinColor = 'marker-tp';
         if (i === 0) pinColor = 'marker-start';
@@ -416,6 +424,7 @@ function addFreehandPoint(latlng) {
     state.freehandTrack.push(pt);
     
     // Draw the active line trace in real-time
+    state.drawings.trackLineBg.addLatLng(latlng);
     state.drawings.trackLine.addLatLng(latlng);
 }
 
@@ -491,9 +500,11 @@ function processFreehandTrack() {
 function renderOptimizationResult(result, rawPoints, simplified) {
     clearMapLayers();
     
-    // Draw raw track log in faded cyan
+    // Draw raw track log in faded red with black outline
+    state.drawings.trackLineBg.setLatLngs(rawPoints);
+    state.drawings.trackLineBg.setStyle({ color: '#000000', weight: 5, opacity: 0.3 });
     state.drawings.trackLine.setLatLngs(rawPoints);
-    state.drawings.trackLine.setStyle({ color: '#00f2fe', weight: 2.5, opacity: 0.35 });
+    state.drawings.trackLine.setStyle({ color: '#dc2626', weight: 2.5, opacity: 0.5 });
     
     // Draw simplified track in dotted blue
     state.drawings.simplifiedLine = L.polyline(simplified, {
@@ -508,16 +519,18 @@ function renderOptimizationResult(result, rawPoints, simplified) {
     const optPoints = result.refinedPoints || optIndices.map(idx => simplified[idx]);
     
     // Draw optimized leg route
+    state.drawings.optLineBg.setLatLngs(optPoints);
+    state.drawings.optLineBg.setStyle({ color: '#000000', weight: 8, opacity: 0.9 });
     state.drawings.optLine.setLatLngs(optPoints);
     let color = '#3b82f6';
     if (result.type === 'free_tri') color = '#a855f7';
     if (result.type === 'fai') color = '#00f2fe';
     if (result.type === 'closed_free') color = '#f59e0b';
     if (result.type === 'closed_fai') color = '#10b981';
-    state.drawings.optLine.setStyle({ color: color, weight: 5, opacity: 0.95 });
+    state.drawings.optLine.setStyle({ color: color, weight: 4.5, opacity: 0.95 });
     
     // Draw optimized markers
-    const labels = ['START', 'TURNPOINT 1', 'TURNPOINT 2', 'TURNPOINT 3', 'FINISH'];
+    const labels = ['START', 'TP 1', 'TP 2', 'TP 3', 'FINISH'];
     optPoints.forEach((pt, i) => {
         let pinColor = 'marker-tp';
         if (i === 0) pinColor = 'marker-start';
@@ -1364,7 +1377,9 @@ function clearAll() {
 
 function clearDrawings() {
     clearMapLayers();
+    if (state.drawings.trackLineBg) state.drawings.trackLineBg.setLatLngs([]);
     if (state.drawings.trackLine) state.drawings.trackLine.setLatLngs([]);
+    if (state.drawings.optLineBg) state.drawings.optLineBg.setLatLngs([]);
     if (state.drawings.optLine) state.drawings.optLine.setLatLngs([]);
 }
 
@@ -1427,6 +1442,7 @@ function updateWaypointOverlaysOnly() {
     clearOptimizedMarkersOnly();
     
     // Update raw clicked track line
+    state.drawings.trackLineBg.setLatLngs(wps);
     state.drawings.trackLine.setLatLngs(wps);
 
     if (len === 0) {
@@ -1582,16 +1598,18 @@ function updateScoreDashboard(points, dist, type, legs, gap, gapPercent, numPoin
             const isTri = ['free_tri', 'fai', 'closed_free', 'closed_fai'].includes(type);
             if (isTri) {
                 if (numPoints === 4) {
-                    if (idx === 0) labelText = 'Leg 1 (1 → 2)';
-                    if (idx === 1) labelText = 'Leg 2 (2 → 3)';
-                    if (idx === 2) labelText = 'Leg 3 (3 → 4)';
+                    if (idx === 0) labelText = 'Leg 1: START → TP 1 (1 → 2)';
+                    if (idx === 1) labelText = 'Leg 2: TP 1 → TP 2 (2 → 3)';
+                    if (idx === 2) labelText = 'Leg 3: TP 2 → FINISH (3 → 4)';
                 } else { // numPoints === 5 or default
-                    if (idx === 0) labelText = 'Leg 1 (2 → 3)';
-                    if (idx === 1) labelText = 'Leg 2 (3 → 4)';
-                    if (idx === 2) labelText = 'Leg 3 (4 → 2)';
+                    if (idx === 0) labelText = 'Leg 1: TP 1 → TP 2 (2 → 3)';
+                    if (idx === 1) labelText = 'Leg 2: TP 2 → TP 3 (3 → 4)';
+                    if (idx === 2) labelText = 'Leg 3: TP 3 → TP 1 (4 → 2)';
                 }
             } else { // free flight
-                labelText = `Leg ${idx + 1} (${idx + 1} → ${idx + 2})`;
+                const startLbl = idx === 0 ? 'START' : `TP ${idx}`;
+                const endLbl = (idx + 2 === numPoints) ? 'FINISH' : `TP ${idx + 1}`;
+                labelText = `Leg ${idx + 1}: ${startLbl} → ${endLbl} (${idx + 1} → ${idx + 2})`;
             }
             if (nameEl) {
                 nameEl.innerText = labelText;
@@ -1825,7 +1843,7 @@ function loadSavedItem(id) {
         }
         
         // Load the saved track into pace comparison
-        const colors = ['#00f2fe', '#a855f7', '#f59e0b', '#10b981', '#ec4899', '#3b82f6'];
+        const colors = ['#ef4444', '#1e293b', '#f97316', '#b91c1c', '#475569', '#000000'];
         const trackColor = colors[state.compareTracks.length % colors.length];
         
         // Ensure timestamps exist
@@ -2122,7 +2140,7 @@ function loadImportedTrack(points, label) {
     points = ensureTimestamps(points);
 
     if (state.mode === 'compare') {
-        const colors = ['#00f2fe', '#a855f7', '#f59e0b', '#10b981', '#ec4899', '#3b82f6'];
+        const colors = ['#ef4444', '#1e293b', '#f97316', '#b91c1c', '#475569', '#000000'];
         const trackColor = colors[state.compareTracks.length % colors.length];
         
         const newTrack = {
@@ -2618,6 +2636,40 @@ function getInterpolatedPos(trackPoints, targetTime) {
 function getNearestNeighborChain(nodes) {
     if (nodes.length <= 1) return nodes;
     
+    // For small N (up to 8), find the exact shortest open path (TSP)
+    if (nodes.length <= 8) {
+        let bestPath = null;
+        let minTotalDist = Infinity;
+        
+        // Helper to generate permutations
+        const permute = (arr, m = []) => {
+            if (arr.length === 0) {
+                let distSum = 0;
+                for (let i = 0; i < m.length - 1; i++) {
+                    const n1 = m[i];
+                    const n2 = m[i+1];
+                    distSum += Math.sqrt((n1.lat - n2.lat) ** 2 + (n1.lng - n2.lng) ** 2);
+                }
+                if (distSum < minTotalDist) {
+                    minTotalDist = distSum;
+                    bestPath = [...m];
+                }
+            } else {
+                for (let i = 0; i < arr.length; i++) {
+                    const curr = arr.slice();
+                    const next = curr.splice(i, 1);
+                    m.push(next[0]);
+                    permute(curr, m);
+                    m.pop();
+                }
+            }
+        };
+        
+        permute(nodes);
+        return bestPath || nodes;
+    }
+    
+    // Fallback to greedy nearest neighbor if N > 8
     const chain = [nodes[0]];
     const unvisited = nodes.slice(1);
     let current = nodes[0];
@@ -2706,13 +2758,21 @@ function renderCompareMode() {
     // Draw each visible track line
     const visibleTracks = state.compareTracks.filter(t => t.visible);
     visibleTracks.forEach(track => {
-        const polyline = L.polyline(track.points, {
-            color: track.color,
-            weight: 2,
-            opacity: 0.45,
+        // Draw black casing
+        L.polyline(track.points, {
+            color: '#000000',
+            weight: 5.5,
+            opacity: 0.75,
             interactive: false
-        });
-        polyline.addTo(state.drawings.compareTracksGroup);
+        }).addTo(state.drawings.compareTracksGroup);
+
+        // Draw colored foreground track line
+        L.polyline(track.points, {
+            color: track.color,
+            weight: 3,
+            opacity: 0.95,
+            interactive: false
+        }).addTo(state.drawings.compareTracksGroup);
     });
     
     if (visibleTracks.length === 0) {
