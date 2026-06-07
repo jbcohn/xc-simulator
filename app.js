@@ -222,6 +222,7 @@ function renderWaypointMode() {
     wps.forEach((wp, idx) => {
         const marker = L.marker([wp.lat, wp.lng], {
             draggable: true,
+            zIndexOffset: 1000, // Ensure drag marker is always on top of big pins
             icon: L.divIcon({
                 className: 'waypoint-drag-marker',
                 html: '<div class="waypoint-marker-dot"></div>',
@@ -1395,16 +1396,47 @@ function copyTurnpointsToWaypoints() {
         return;
     }
     
-    let pointsToCopy = [...state.optimizedPoints];
+    // Extract points cleanly depending on flight type
+    const isTri = state.currentStats && (
+        state.currentStats.type.includes('fai') || 
+        state.currentStats.type.includes('tri') || 
+        state.currentStats.type.includes('closed')
+    );
     
-    // If the last point is at the same location as the first point, remove it
-    // since Waypoint Mode handles closing the triangle automatically.
-    if (pointsToCopy.length > 2) {
-        const first = pointsToCopy[0];
-        const last = pointsToCopy[pointsToCopy.length - 1];
-        if (Math.abs(first.lat - last.lat) < 0.00001 && Math.abs(first.lng - last.lng) < 0.00001) {
-            pointsToCopy.pop();
+    let pointsToCopy = [];
+    
+    if (isTri && state.optimizedPoints.length >= 4) {
+        // Triangles have [Start, TP1, TP2, TP3, Finish] or similar. 
+        // We only want the 3 actual corners to avoid overlapping/duplicate points.
+        // Corners are typically at indices 1, 2, 3 for a 5-point array.
+        // For a 4-point array from Waypoint mode, corners are 0, 1, 2.
+        if (state.optimizedPoints.length === 5) {
+            pointsToCopy = [
+                {...state.optimizedPoints[1]},
+                {...state.optimizedPoints[2]},
+                {...state.optimizedPoints[3]}
+            ];
+        } else {
+            // Fallback for 4 points (usually from Waypoint mode itself, though rare to copy from here)
+            pointsToCopy = [
+                {...state.optimizedPoints[0]},
+                {...state.optimizedPoints[1]},
+                {...state.optimizedPoints[2]}
+            ];
         }
+    } else {
+        // Free flight - copy all but remove consecutive duplicates
+        let cleaned = [];
+        for (let pt of state.optimizedPoints) {
+            if (cleaned.length > 0) {
+                const prev = cleaned[cleaned.length - 1];
+                if (Math.abs(pt.lat - prev.lat) < 0.00001 && Math.abs(pt.lng - prev.lng) < 0.00001) {
+                    continue;
+                }
+            }
+            cleaned.push({...pt});
+        }
+        pointsToCopy = cleaned;
     }
     
     // Switch to Waypoint Mode without clearing drawings/state
