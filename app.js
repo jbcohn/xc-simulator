@@ -1420,7 +1420,7 @@ function copyTurnpointsToWaypoints() {
     state.freehandTrack = [];
     
     // Update overlays and score
-    updateWaypointOverlaysOnly();
+    renderWaypointMode();
     
     showToast("Optimized turnpoints copied to Waypoint Mode! You can now drag them.", "success");
 }
