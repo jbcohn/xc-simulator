@@ -8,6 +8,7 @@ const state = {
     mode: 'waypoint', // 'waypoint', 'freehand', or 'compare'
     waypoints: [],    // User clicked waypoints: [{lat, lng}, ...]
     freehandTrack: [], // Raw mouse track points: [{lat, lng}, ...]
+    optimizedPoints: [], // Active optimized turnpoints: [{lat, lng}, ...]
     history: [],      // History stack for undo: [{waypoints, freehandTrack}]
     historyIndex: -1, // Current index in history stack
     activeSavedId: null, // ID of currently loaded saved route/track
@@ -256,6 +257,8 @@ function renderOptimizedOverlays(result, rawPoints) {
     const optPoints = result.refinedPoints || optIndices.map(idx => rawPoints[idx]);
     
     if (optPoints.length < 2) return;
+    
+    state.optimizedPoints = optPoints;
     
     // Draw optimized leg route
     state.drawings.optLineBg.setLatLngs(optPoints);
@@ -517,6 +520,8 @@ function renderOptimizationResult(result, rawPoints, simplified) {
     // Extract optimized indices points
     const optIndices = result.indices;
     const optPoints = result.refinedPoints || optIndices.map(idx => simplified[idx]);
+    
+    state.optimizedPoints = optPoints;
     
     // Draw optimized leg route
     state.drawings.optLineBg.setLatLngs(optPoints);
@@ -1183,6 +1188,12 @@ function initUI() {
         saveBtn.addEventListener('click', saveCurrentFlight);
     }
 
+    // Play with Turnpoints (Copy to Waypoints) Button Listener
+    const copyToWpsBtn = document.getElementById('btn-copy-to-waypoints');
+    if (copyToWpsBtn) {
+        copyToWpsBtn.addEventListener('click', copyTurnpointsToWaypoints);
+    }
+
     // File Upload Listener
     const fileInput = document.getElementById('input-file-upload');
     if (fileInput) {
@@ -1254,7 +1265,7 @@ function closeSidebarOnMobile() {
     }
 }
 
-function setMode(newMode, silent = false) {
+function setMode(newMode, silent = false, clearState = true) {
     if (state.mode === newMode) return;
     
     state.mode = newMode;
@@ -1268,8 +1279,10 @@ function setMode(newMode, silent = false) {
     if (scoringPanel) scoringPanel.style.display = newMode === 'compare' ? 'none' : 'block';
     if (comparePanel) comparePanel.style.display = newMode === 'compare' ? 'block' : 'none';
     
-    // Reset drawings
-    clearAll();
+    // Reset drawings if requested
+    if (clearState) {
+        clearAll();
+    }
     
     if (!silent) {
         let modeName = 'Waypoint Mode';
@@ -1356,6 +1369,7 @@ function clearAll() {
     state.waypoints = [];
     state.freehandTrack = [];
     state.compareTracks = [];
+    state.optimizedPoints = [];
     state.activeSavedId = null;
     state.compareUtcOffset = 'auto';
     
@@ -1373,6 +1387,42 @@ function clearAll() {
     if (state.mode === 'compare') {
         renderCompareMode();
     }
+}
+
+function copyTurnpointsToWaypoints() {
+    if (!state.optimizedPoints || state.optimizedPoints.length < 2) {
+        showToast("No optimized turnpoints to copy.", "warning");
+        return;
+    }
+    
+    let pointsToCopy = [...state.optimizedPoints];
+    
+    // If the last point is at the same location as the first point, remove it
+    // since Waypoint Mode handles closing the triangle automatically.
+    if (pointsToCopy.length > 2) {
+        const first = pointsToCopy[0];
+        const last = pointsToCopy[pointsToCopy.length - 1];
+        if (Math.abs(first.lat - last.lat) < 0.00001 && Math.abs(first.lng - last.lng) < 0.00001) {
+            pointsToCopy.pop();
+        }
+    }
+    
+    // Switch to Waypoint Mode without clearing drawings/state
+    setMode('waypoint', true, false);
+    
+    // Set state.waypoints to the copied points
+    state.waypoints = pointsToCopy;
+    
+    // Save state for undo/redo
+    saveState();
+    
+    // Clear any freehand track log so we only display the waypoints
+    state.freehandTrack = [];
+    
+    // Update overlays and score
+    updateWaypointOverlaysOnly();
+    
+    showToast("Optimized turnpoints copied to Waypoint Mode! You can now drag them.", "success");
 }
 
 function clearDrawings() {
@@ -1645,6 +1695,16 @@ function updateScoreDashboard(points, dist, type, legs, gap, gapPercent, numPoin
         shortestLegBadge.innerText = 'No legs';
         shortestLegBadge.className = 'badge';
         shortestLegBadge.style.display = 'inline-block';
+    }
+
+    // Update visibility of the "Play with Turnpoints" button
+    const copyBtnContainer = document.getElementById('btn-copy-to-waypoints-container');
+    if (copyBtnContainer) {
+        if (state.mode !== 'waypoint' && state.optimizedPoints && state.optimizedPoints.length >= 2) {
+            copyBtnContainer.style.display = 'block';
+        } else {
+            copyBtnContainer.style.display = 'none';
+        }
     }
 }
 
