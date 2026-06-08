@@ -790,39 +790,86 @@ function scoreRouteExplicit(wps) {
         const d20 = vincentyDistance(wps[2], wps[0]);
         const perimeter = d01 + d12 + d20;
         const shortestLeg = Math.min(d01, d12, d20);
-        const isFai = shortestLeg >= 0.28 * perimeter;
-        const type = isFai ? 'closed_fai' : 'closed_free';
-        const coeff = isFai ? 1.60 : 1.40;
-        return {
-            score: perimeter * coeff,
-            distance: perimeter,
-            type: type,
-            legLengths: [d01, d12, d20],
-            gap: 0,
-            gapPercent: 0,
-            refinedPoints: [wps[0], wps[1], wps[2], wps[0]],
-            indices: [0, 1, 2, 0]
-        };
+        const gap = d20;
+        const gapPercent = (gap / perimeter) * 100;
+        
+        if (gapPercent <= 20.0) {
+            const isFai = shortestLeg >= 0.28 * perimeter;
+            const isClosed = gapPercent < 5.0;
+            let coeff = 1.20;
+            let type = 'free_tri';
+            if (isFai && isClosed) { coeff = 1.60; type = 'closed_fai'; }
+            else if (isFai && !isClosed) { coeff = 1.40; type = 'fai'; }
+            else if (!isFai && isClosed) { coeff = 1.40; type = 'closed_free'; }
+            
+            const scoredDist = perimeter - gap;
+            return {
+                score: scoredDist * coeff,
+                distance: scoredDist,
+                type: type,
+                legLengths: [d01, d12, d20],
+                gap: gap,
+                gapPercent: gapPercent,
+                refinedPoints: [wps[0], wps[1], wps[2]],
+                indices: [0, 1, 2]
+            };
+        } else {
+            const totalDist = d01 + d12;
+            return {
+                score: totalDist * 1.0,
+                distance: totalDist,
+                type: 'free',
+                legLengths: [d01, d12],
+                gap: 0,
+                gapPercent: 0,
+                refinedPoints: [wps[0], wps[1], wps[2]],
+                indices: [0, 1, 2]
+            };
+        }
     }
     else if (len === 4) {
+        const d01 = vincentyDistance(wps[0], wps[1]);
         const d12 = vincentyDistance(wps[1], wps[2]);
         const d23 = vincentyDistance(wps[2], wps[3]);
         const d31 = vincentyDistance(wps[3], wps[1]);
-        const perimeter = d12 + d23 + d31;
-        const shortestLeg = Math.min(d12, d23, d31);
-        const isFai = shortestLeg >= 0.28 * perimeter;
-        const type = isFai ? 'closed_fai' : 'closed_free';
-        const coeff = isFai ? 1.60 : 1.40;
-        return {
-            score: perimeter * coeff,
-            distance: perimeter,
-            type: type,
-            legLengths: [d12, d23, d31],
-            gap: 0,
-            gapPercent: 0,
-            refinedPoints: [wps[0], wps[1], wps[2], wps[3], wps[0]],
-            indices: [0, 1, 2, 3, 0]
-        };
+        const triPerimeter = d12 + d23 + d31;
+        const gap = vincentyDistance(wps[0], wps[3]);
+        const gapPercent = (gap / triPerimeter) * 100;
+        
+        if (gapPercent <= 20.0) {
+            const shortestLeg = Math.min(d12, d23, d31);
+            const isFai = shortestLeg >= 0.28 * triPerimeter;
+            const isClosed = gapPercent < 5.0;
+            let coeff = 1.20;
+            let type = 'free_tri';
+            if (isFai && isClosed) { coeff = 1.60; type = 'closed_fai'; }
+            else if (isFai && !isClosed) { coeff = 1.40; type = 'fai'; }
+            else if (!isFai && isClosed) { coeff = 1.40; type = 'closed_free'; }
+            
+            const scoredDist = triPerimeter - gap;
+            return {
+                score: scoredDist * coeff,
+                distance: scoredDist,
+                type: type,
+                legLengths: [d12, d23, d31],
+                gap: gap,
+                gapPercent: gapPercent,
+                refinedPoints: [wps[0], wps[1], wps[2], wps[3]],
+                indices: [0, 1, 2, 3]
+            };
+        } else {
+            const totalDist = d01 + d12 + d23;
+            return {
+                score: totalDist * 1.0,
+                distance: totalDist,
+                type: 'free',
+                legLengths: [d01, d12, d23],
+                gap: 0,
+                gapPercent: 0,
+                refinedPoints: [wps[0], wps[1], wps[2], wps[3]],
+                indices: [0, 1, 2, 3]
+            };
+        }
     }
     else if (len === 5) {
         const d12 = vincentyDistance(wps[1], wps[2]);
@@ -1526,6 +1573,10 @@ function updateWaypointOverlaysOnly() {
     // Update raw clicked track line
     state.drawings.trackLineBg.setLatLngs(wps);
     state.drawings.trackLine.setLatLngs(wps);
+
+    // Clear optimized lines to prevent leftover paths when undoing or modifying points
+    if (state.drawings.optLineBg) state.drawings.optLineBg.setLatLngs([]);
+    if (state.drawings.optLine) state.drawings.optLine.setLatLngs([]);
 
     if (len === 0) {
         updateScoreDashboard(0, 0, 'free', [], 0, 0);
