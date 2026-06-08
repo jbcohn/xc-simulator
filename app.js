@@ -1454,21 +1454,21 @@ function copyTurnpointsToWaypoints() {
     
     if (isTri && state.optimizedPoints.length >= 4) {
         // Triangles have [Start, TP1, TP2, TP3, Finish] or similar. 
-        // We only want the 3 actual corners to avoid overlapping/duplicate points.
-        // Corners are typically at indices 1, 2, 3 for a 5-point array.
-        // For a 4-point array from Waypoint mode, corners are 0, 1, 2.
         if (state.optimizedPoints.length === 5) {
-            pointsToCopy = [
-                {...state.optimizedPoints[1]},
-                {...state.optimizedPoints[2]},
-                {...state.optimizedPoints[3]}
-            ];
-        } else {
-            // Fallback for 4 points (usually from Waypoint mode itself, though rare to copy from here)
             pointsToCopy = [
                 {...state.optimizedPoints[0]},
                 {...state.optimizedPoints[1]},
-                {...state.optimizedPoints[2]}
+                {...state.optimizedPoints[2]},
+                {...state.optimizedPoints[3]},
+                {...state.optimizedPoints[4]}
+            ];
+        } else {
+            // Fallback for 4 points
+            pointsToCopy = [
+                {...state.optimizedPoints[0]},
+                {...state.optimizedPoints[1]},
+                {...state.optimizedPoints[2]},
+                {...state.optimizedPoints[3]}
             ];
         }
     } else {
@@ -1497,6 +1497,11 @@ function copyTurnpointsToWaypoints() {
     
     // Clear any freehand track log so we only display the waypoints
     state.freehandTrack = [];
+    
+    // Clear the active track display and sidebar highlight since we're now just editing waypoints
+    state.activeSavedId = null;
+    highlightActiveSavedItem();
+    updateActiveTrackDisplay(null);
     
     // Update overlays and score
     renderWaypointMode();
